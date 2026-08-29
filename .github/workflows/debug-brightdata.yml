@@ -3,6 +3,9 @@ name: Debug Bright Data Response
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   debug:
     runs-on: ubuntu-latest
