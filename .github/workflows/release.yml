@@ -25,9 +25,25 @@ jobs:
         run: npm install
 
       - name: Build and publish to GitHub Releases
-        run: npx electron-builder -w --publish always
+        id: build
+        shell: bash
+        run: npx electron-builder -w --publish always 2>&1 | tee build-log.txt
         env:
-          # GITHUB_TOKEN is provided automatically by GitHub Actions --
-          # no manual secret setup needed, and it's scoped only to this
-          # repo, only for the duration of this workflow run.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Push build log for inspection (only runs if the build failed)
+        if: steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git fetch origin
+          git checkout -B build-log
+          git add build-log.txt
+          git commit -m "Build log for failed run ${{ github.run_id }}"
+          git push -f origin build-log
+
+      - name: Fail the job if the build failed
+        if: steps.build.outcome == 'failure'
+        run: exit 1
