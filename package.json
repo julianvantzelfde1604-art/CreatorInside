@@ -1,0 +1,46 @@
+{
+  "name": "creator-inside",
+  "version": "1.0.0",
+  "description": "Creator prospecting app with Bright Data lookup",
+  "main": "electron-main.js",
+  "homepage": "./",
+  "author": "Julian",
+  "scripts": {
+    "app": "electron .",
+    "build-exe": "electron-builder -w --publish never"
+  },
+  "build": {
+    "appId": "com.julian.creatorinside",
+    "productName": "CreatorInside",
+    "files": [
+      "electron-main.js",
+      "electron-preload.js",
+      "app/**/*",
+      "build/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "julianvantzelfde1604-art",
+      "repo": "CreatorInside"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^25.9.8",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

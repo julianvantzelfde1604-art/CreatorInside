@@ -1,0 +1,33 @@
+name: Build and Release
+
+# Runs automatically whenever a version tag (like v1.0.1) is pushed.
+# Builds on GitHub's own Windows servers -- not a workaround, this is
+# the standard, professional way Electron apps ship auto-updates.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and publish to GitHub Releases
+        run: npx electron-builder -w --publish always
+        env:
+          # GITHUB_TOKEN is provided automatically by GitHub Actions --
+          # no manual secret setup needed, and it's scoped only to this
+          # repo, only for the duration of this workflow run.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

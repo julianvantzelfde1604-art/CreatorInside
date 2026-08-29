@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CreatorInside</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>CreatorInside</h1>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="lookup">Lookup</button>
+      <button class="tab-btn" data-tab="creators">Creators</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+  </div>
+
+  <div id="updateBanner" class="update-banner" style="display:none;"></div>
+
+  <!-- ============ LOOKUP TAB ============ -->
+  <div id="tab-lookup" class="tab-panel active">
+    <div class="card">
+      <h2>Look up one creator via Bright Data</h2>
+      <p class="hint">
+        Fetches their SocialBlade page through your Bright Data account and reads
+        the real follower/engagement numbers off it.
+      </p>
+      <div class="lookup-row">
+        <input type="text" id="lookupUsername" placeholder="instagram username (no @)">
+        <button class="btn-primary" id="lookupBtn">Look Up</button>
+      </div>
+      <div id="lookupStatus" class="lookup-status"></div>
+      <div id="lookupResult" class="lookup-result" style="display:none;"></div>
+      <div id="lookupRaw" class="lookup-raw" style="display:none;"></div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+      <h2>Discover by hashtag / niche</h2>
+      <p class="hint">
+        Fetches an Instagram hashtag page via Bright Data, finds candidate usernames,
+        then checks each on SocialBlade. Instagram loads a lot of this page with
+        JavaScript, so this is less reliable than the single lookup above -- if it
+        finds nothing, the raw fetched page is shown so we can see why.
+      </p>
+      <div class="discover-grid">
+        <input type="text" id="discoverHashtag" placeholder="hashtag, no # (e.g. parentingtips)">
+        <input type="number" id="discoverMin" placeholder="min followers" value="10000">
+        <input type="number" id="discoverMax" placeholder="max followers" value="120000">
+      </div>
+      <button class="btn-primary" id="discoverBtn">Discover</button>
+      <div id="discoverStatus" class="lookup-status"></div>
+      <div id="discoverResults" class="discover-results"></div>
+      <div id="discoverRaw" class="lookup-raw" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- ============ CREATORS TAB ============ -->
+  <div id="tab-creators" class="tab-panel">
+    <div class="filter-bar">
+      <div class="field">
+        <label>Min followers</label>
+        <input type="number" id="filterMin" value="10000">
+      </div>
+      <div class="field">
+        <label>Max followers</label>
+        <input type="number" id="filterMax" value="120000">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn-secondary" id="exportBtn">Export CSV</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn-secondary" id="copyDocsBtn">Copy for Google Docs</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <table class="creators-table">
+      <thead>
+        <tr>
+          <th>Username</th><th>Followers</th><th>Engagement</th><th>Status</th><th>Links</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="creatorsBody"></tbody>
+    </table>
+    <div id="emptyState" class="empty-state">
+      <p>No creators yet. Use the Lookup tab to find and add one.</p>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS TAB ============ -->
+  <div id="tab-settings" class="tab-panel">
+    <div class="card">
+      <h2>Bright Data credentials</h2>
+      <p class="hint">
+        Stored only on this computer, in a local config file. Never sent anywhere
+        except directly to Bright Data's API when you click "Look Up".
+      </p>
+      <div class="field">
+        <label>API Key</label>
+        <input type="password" id="settingsApiKey" placeholder="your Bright Data API key">
+      </div>
+      <div class="field">
+        <label>Zone (optional -- only if your account requires one)</label>
+        <input type="text" id="settingsZone" placeholder="e.g. web_unlocker1">
+      </div>
+      <button class="btn-primary" id="saveSettingsBtn">Save</button>
+      <div id="settingsSaved" class="saved-msg" style="display:none;">Saved.</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
