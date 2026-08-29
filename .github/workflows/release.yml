@@ -44,15 +44,26 @@ jobs:
           set -e
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Looking up release for tag: $TAG"
-          RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
-          RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
-          if [ "$RELEASE_ID" = "null" ] || [ -z "$RELEASE_ID" ]; then
-            echo "ERROR: Could not find a release for tag $TAG. Response was:"
-            echo "$RELEASE_JSON"
+
+          RELEASE_ID=""
+          for i in 1 2 3 4 5; do
+            RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases" | \
+              jq -r --arg TAG "$TAG" '.[] | select(.tag_name == $TAG) | .id')
+            if [ -n "$RELEASE_ID" ]; then
+              echo "Found release ID: $RELEASE_ID on attempt $i"
+              break
+            fi
+            echo "Not found yet on attempt $i, waiting 5s..."
+            sleep 5
+          done
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "ERROR: Could not find a release for tag $TAG after retries."
             exit 1
           fi
-          echo "Found release ID: $RELEASE_ID -- publishing it"
+
+          echo "Publishing release ID: $RELEASE_ID"
           curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID" \
             -d '{"draft": false}'
