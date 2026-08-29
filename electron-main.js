@@ -154,9 +154,14 @@ ipcMain.handle('export-csv', async (event, creators) => {
 
 function fetchViaBrightData(targetUrl, apiKey, zone) {
   return new Promise((resolve, reject) => {
+    // format: "json" (not "raw") is deliberate -- Bright Data silently
+    // returns an empty 200 on internal failures when using "raw", but
+    // wraps the real status/headers/error around the content when using
+    // "json". That's the only way this app can show you the actual
+    // cause of a failure instead of a bare "0 bytes back".
     const payload = JSON.stringify({
       url: targetUrl,
-      format: 'raw',
+      format: 'json',
       ...(zone ? { zone } : {})
     });
 
@@ -188,6 +193,29 @@ function fetchViaBrightData(targetUrl, apiKey, zone) {
   });
 }
 
+// Unwraps Bright Data's format=json envelope: { status_code, headers,
+// body }. Returns { html, brightDataError } so callers can show the
+// REAL failure reason (e.g. "waiting for selector timed out") instead
+// of a bare empty response.
+function unwrapBrightDataResponse(rawBody) {
+  let envelope;
+  try {
+    envelope = JSON.parse(rawBody);
+  } catch (err) {
+    // Not JSON at all -- treat the raw text as the error context.
+    return { html: null, brightDataError: null, statusCode: null, parseFailed: true };
+  }
+
+  const headers = envelope.headers || {};
+  const brightDataError = headers['x-brd-error'] || headers['x-brd-error-code'] || null;
+
+  return {
+    html: envelope.body || '',
+    brightDataError,
+    statusCode: envelope.status_code
+  };
+}
+
 function parseSocialBlade(html, username) {
   const result = { username, followers: null, engagementRate: null };
   const followersMatch = html.match(/Followers[\s\S]{0,200}?([\d,]+)/i);
@@ -210,20 +238,49 @@ ipcMain.handle('lookup-creator', async (event, { username, apiKey, zone }) => {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return {
         success: false,
-        error: `Bright Data returned HTTP ${response.statusCode}`,
+        error: `Bright Data's own API call failed with HTTP ${response.statusCode}`,
         rawResponse: response.body,
         rawResponseLength: response.body.length
       };
     }
 
-    const parsed = parseSocialBlade(response.body, cleanUsername);
+    const unwrapped = unwrapBrightDataResponse(response.body);
+
+    if (unwrapped.parseFailed) {
+      return {
+        success: false,
+        error: 'Got a response back but it was not valid JSON -- unexpected format.',
+        rawResponse: response.body,
+        rawResponseLength: response.body.length
+      };
+    }
+
+    if (unwrapped.brightDataError) {
+      return {
+        success: false,
+        error: `Bright Data could not fetch the target page: ${unwrapped.brightDataError}`,
+        rawResponse: response.body,
+        rawResponseLength: response.body.length
+      };
+    }
+
+    if (unwrapped.statusCode && (unwrapped.statusCode < 200 || unwrapped.statusCode >= 300)) {
+      return {
+        success: false,
+        error: `The target page itself returned HTTP ${unwrapped.statusCode}`,
+        rawResponse: response.body,
+        rawResponseLength: response.body.length
+      };
+    }
+
+    const parsed = parseSocialBlade(unwrapped.html || '', cleanUsername);
 
     if (parsed.followers === null) {
       return {
         success: false,
-        error: `Fetched the page (HTTP ${response.statusCode}, ${response.body.length} bytes back) but could not find follower/engagement numbers in it.`,
-        rawResponse: response.body,
-        rawResponseLength: response.body.length
+        error: `Fetched the page (${(unwrapped.html || '').length} bytes of real HTML back, no Bright Data error) but could not find follower/engagement numbers in it -- the page layout may not match what this was built against.`,
+        rawResponse: unwrapped.html,
+        rawResponseLength: (unwrapped.html || '').length
       };
     }
 
@@ -289,18 +346,29 @@ ipcMain.handle('discover-creators', async (event, { hashtag, minFollowers, maxFo
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return {
         success: false,
-        error: `Bright Data returned HTTP ${response.statusCode} fetching the hashtag page`,
+        error: `Bright Data's own API call failed with HTTP ${response.statusCode}`,
         rawResponse: response.body.slice(0, 2000)
       };
     }
 
-    const candidates = extractUsernamesFromHashtagPage(response.body).slice(0, MAX_CANDIDATES_PER_SEARCH);
+    const unwrapped = unwrapBrightDataResponse(response.body);
+
+    if (unwrapped.brightDataError) {
+      return {
+        success: false,
+        error: `Bright Data could not fetch the hashtag page: ${unwrapped.brightDataError}`,
+        rawResponse: response.body.slice(0, 2000)
+      };
+    }
+
+    const hashtagHtml = unwrapped.html || '';
+    const candidates = extractUsernamesFromHashtagPage(hashtagHtml).slice(0, MAX_CANDIDATES_PER_SEARCH);
 
     if (candidates.length === 0) {
       return {
         success: false,
         error: 'Fetched the hashtag page but found no usable usernames in it -- likely because Instagram rendered the post grid via JavaScript that this fetch did not execute.',
-        rawResponse: response.body.slice(0, 2000)
+        rawResponse: hashtagHtml.slice(0, 2000)
       };
     }
 
@@ -312,12 +380,17 @@ ipcMain.handle('discover-creators', async (event, { hashtag, minFollowers, maxFo
       try {
         const sbResponse = await fetchViaBrightData(sbUrl, apiKey, zone);
         if (sbResponse.statusCode < 200 || sbResponse.statusCode >= 300) {
-          skipped.push({ username, reason: `SocialBlade fetch failed (HTTP ${sbResponse.statusCode})` });
+          skipped.push({ username, reason: `Bright Data API call failed (HTTP ${sbResponse.statusCode})` });
           continue;
         }
-        const parsed = parseSocialBlade(sbResponse.body, username);
+        const sbUnwrapped = unwrapBrightDataResponse(sbResponse.body);
+        if (sbUnwrapped.brightDataError) {
+          skipped.push({ username, reason: sbUnwrapped.brightDataError });
+          continue;
+        }
+        const parsed = parseSocialBlade(sbUnwrapped.html || '', username);
         if (parsed.followers === null) {
-          skipped.push({ username, reason: 'Could not read follower count' });
+          skipped.push({ username, reason: 'Could not read follower count from real page content' });
           continue;
         }
         if (parsed.followers < minFollowers || parsed.followers > maxFollowers) {
