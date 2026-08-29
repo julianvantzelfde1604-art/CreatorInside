@@ -269,7 +269,18 @@ ipcMain.handle('discover-creators', async (event, { hashtag, minFollowers, maxFo
   if (!apiKey) {
     return { success: false, error: 'No Bright Data API key set. Add it in Settings first.' };
   }
-  const cleanTag = hashtag.replace(/^#/, '').trim();
+  // Instagram hashtags can't contain spaces, capitals, or punctuation --
+  // normalize whatever the user typed instead of sending a broken URL.
+  const cleanTag = hashtag
+    .replace(/^#/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+
+  if (!cleanTag) {
+    return { success: false, error: 'Enter a hashtag with at least one letter or number in it.' };
+  }
+
   const targetUrl = `https://www.instagram.com/explore/tags/${cleanTag}/`;
 
   try {
