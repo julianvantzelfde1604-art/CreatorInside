@@ -35,6 +35,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
+      - name: Publish the release (electron-builder creates it as a draft by default)
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" | \
+            python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID" \
+            -d '{"draft": false}'
+
       - name: Push build log for inspection (only runs if the build failed)
         if: steps.build.outcome == 'failure'
         shell: bash
