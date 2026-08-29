@@ -16,32 +16,13 @@ jobs:
       - name: Try the request and capture everything about the response
         shell: bash
         run: |
-          echo "=== Attempt 1: format=raw ===" > debug-output.txt
-          curl -s -w "\n[HTTP_STATUS:%{http_code}] [BODY_BYTES:%{size_download}]\n" \
-            -X POST "https://api.brightdata.com/request" \
+          echo "=== Instagram Profiles - collect by URL (sync /scrape) ===" > debug-output.txt
+          curl -s -w "\n[HTTP_STATUS:%{http_code}]\n" \
+            -X POST "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_l1vikfch901nx3by4&format=json" \
             -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{"zone":"web_unlocker1","url":"https://socialblade.com/instagram/user/mama.shocks","format":"raw"}' \
+            -d '[{"url":"https://www.instagram.com/mama.shocks"}]' \
             >> debug-output.txt 2>&1
-
-          echo "" >> debug-output.txt
-          echo "=== Attempt 2: no format field at all ===" >> debug-output.txt
-          curl -s -w "\n[HTTP_STATUS:%{http_code}] [BODY_BYTES:%{size_download}]\n" \
-            -X POST "https://api.brightdata.com/request" \
-            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{"zone":"web_unlocker1","url":"https://socialblade.com/instagram/user/mama.shocks"}' \
-            >> debug-output.txt 2>&1
-
-          echo "" >> debug-output.txt
-          echo "=== Attempt 3: format=json (some Bright Data products wrap content in JSON) ===" >> debug-output.txt
-          curl -s -w "\n[HTTP_STATUS:%{http_code}] [BODY_BYTES:%{size_download}]\n" \
-            -X POST "https://api.brightdata.com/request" \
-            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{"zone":"web_unlocker1","url":"https://socialblade.com/instagram/user/mama.shocks","format":"json"}' \
-            >> debug-output.txt 2>&1
-
           cat debug-output.txt
 
       - name: Push the result so it can be read back
