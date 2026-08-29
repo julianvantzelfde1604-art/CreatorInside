@@ -1,0 +1,53 @@
+name: Debug Bright Data Response
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Try the request and capture everything about the response
+        shell: bash
+        run: |
+          echo "=== Attempt 1: format=raw ===" > debug-output.txt
+          curl -s -w "\n[HTTP_STATUS:%{http_code}] [BODY_BYTES:%{size_download}]\n" \
+            -X POST "https://api.brightdata.com/request" \
+            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"zone":"web_unlocker1","url":"https://socialblade.com/instagram/user/mama.shocks","format":"raw"}' \
+            >> debug-output.txt 2>&1
+
+          echo "" >> debug-output.txt
+          echo "=== Attempt 2: no format field at all ===" >> debug-output.txt
+          curl -s -w "\n[HTTP_STATUS:%{http_code}] [BODY_BYTES:%{size_download}]\n" \
+            -X POST "https://api.brightdata.com/request" \
+            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"zone":"web_unlocker1","url":"https://socialblade.com/instagram/user/mama.shocks"}' \
+            >> debug-output.txt 2>&1
+
+          echo "" >> debug-output.txt
+          echo "=== Attempt 3: format=json (some Bright Data products wrap content in JSON) ===" >> debug-output.txt
+          curl -s -w "\n[HTTP_STATUS:%{http_code}] [BODY_BYTES:%{size_download}]\n" \
+            -X POST "https://api.brightdata.com/request" \
+            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"zone":"web_unlocker1","url":"https://socialblade.com/instagram/user/mama.shocks","format":"json"}' \
+            >> debug-output.txt 2>&1
+
+          cat debug-output.txt
+
+      - name: Push the result so it can be read back
+        shell: bash
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git fetch origin
+          git checkout -B debug-output
+          git add debug-output.txt
+          git commit -m "Bright Data debug output"
+          git push -f origin debug-output
