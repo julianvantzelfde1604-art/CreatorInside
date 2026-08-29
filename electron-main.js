@@ -170,7 +170,7 @@ function fetchViaBrightData(targetUrl, apiKey, zone) {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload)
         },
-        timeout: 30000
+        timeout: 45000
       },
       (res) => {
         let body = '';
@@ -182,7 +182,7 @@ function fetchViaBrightData(targetUrl, apiKey, zone) {
     );
 
     req.on('error', (err) => reject(err));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out after 30s')); });
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out after 45s -- Bright Data itself may still be waiting on something (like an unresolved "expect element" setting) rather than this being a connection problem.')); });
     req.write(payload);
     req.end();
   });
