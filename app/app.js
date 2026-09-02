@@ -1,5 +1,5 @@
 let creators = [];
-let config = { apiKey: '', zone: '' };
+let config = { apiKey: '', zone: '', apifyToken: '' };
 
 // ---------- Auto-update ----------
 window.api.onUpdateStatus((data) => {
@@ -42,6 +42,7 @@ async function init() {
   config = await window.api.loadConfig();
   document.getElementById('settingsApiKey').value = config.apiKey || '';
   document.getElementById('settingsZone').value = config.zone || '';
+  document.getElementById('settingsApifyToken').value = config.apifyToken || '';
   renderCreators();
 }
 init();
@@ -50,7 +51,8 @@ init();
 document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
   config = {
     apiKey: document.getElementById('settingsApiKey').value.trim(),
-    zone: document.getElementById('settingsZone').value.trim()
+    zone: document.getElementById('settingsZone').value.trim(),
+    apifyToken: document.getElementById('settingsApifyToken').value.trim()
   };
   await window.api.saveConfig(config);
   const msg = document.getElementById('settingsSaved');
@@ -67,12 +69,85 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
   const btn = document.getElementById('lookupBtn');
 
   if (!username) { alert('Enter a username first.'); return; }
-  if (!config.apiKey) {
-    statusEl.textContent = 'No API key set -- go to Settings and add your Bright Data key first.';
+  if (!config.apifyToken) {
+    statusEl.textContent = 'No Apify token set -- go to Settings and add it first.';
     return;
   }
 
   btn.disabled = true;
+  statusEl.textContent = 'Fetching via Apify...';
+  resultEl.style.display = 'none';
+  rawEl.style.display = 'none';
+
+  const response = await window.api.lookupCreatorApify({
+    username,
+    apiToken: config.apifyToken
+  });
+
+  btn.disabled = false;
+  statusEl.textContent = '';
+
+  if (response.success) {
+    const d = response.data;
+    resultEl.className = 'lookup-result';
+    resultEl.innerHTML = `
+      <b>@${escapeHtml(d.username)}</b>${d.verified ? ' <span title="Verified">✓</span>' : ''}
+      <div class="stats">
+        ${d.followers !== null ? d.followers.toLocaleString() : '?'} followers ·
+        ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '% engagement (real, from last ' + d.engagementPostsUsed + ' posts)' : 'engagement unknown (no recent post data)'}
+      </div>
+      ${d.biography ? `<div class="stats" style="font-family:var(--font-ui); font-size:12.5px; margin-top:4px;">${escapeHtml(d.biography)}</div>` : ''}
+      ${d.externalUrl ? `<div class="stats" style="font-family:var(--font-ui); font-size:12px; margin-top:4px; color:var(--ink-soft);">Link in bio: ${escapeHtml(d.externalUrl)}</div>` : ''}
+      <button class="btn-secondary" id="addFromLookupBtn" style="margin-top:10px;">+ Add to Creators list</button>
+    `;
+    resultEl.style.display = 'block';
+
+    document.getElementById('addFromLookupBtn').addEventListener('click', async () => {
+      if (creators.some(c => c.username.toLowerCase() === d.username.toLowerCase())) {
+        alert('Already in your list.');
+        return;
+      }
+      creators.push({
+        id: Date.now().toString(36),
+        username: d.username,
+        followers: d.followers,
+        engagement: d.engagementRate,
+        status: 'Not Contacted',
+        notes: d.externalUrl ? `Bio link: ${d.externalUrl}` : '',
+        instagramUrl: `https://instagram.com/${d.username}`,
+        socialBladeUrl: `https://socialblade.com/instagram/user/${d.username}`
+      });
+      await window.api.saveCreators(creators);
+      renderCreators();
+      alert('Added @' + d.username + ' to your Creators list.');
+    });
+  } else {
+    resultEl.className = 'lookup-result error';
+    resultEl.innerHTML = `<b>Lookup failed</b><div class="stats">${escapeHtml(response.error)}</div>`;
+    resultEl.style.display = 'block';
+
+    if (response.rawResponse) {
+      rawEl.textContent = response.rawResponse;
+      rawEl.style.display = 'block';
+    }
+  }
+});
+
+// ---------- Lookup (Bright Data, fallback path -- kept for now) ----------
+document.getElementById('fallbackBrightDataBtn').addEventListener('click', lookupViaBrightDataFallback);
+
+async function lookupViaBrightDataFallback() {
+  const username = document.getElementById('lookupUsername').value.trim();
+  const statusEl = document.getElementById('lookupStatus');
+  const resultEl = document.getElementById('lookupResult');
+  const rawEl = document.getElementById('lookupRaw');
+
+  if (!username) { alert('Enter a username first.'); return; }
+  if (!config.apiKey) {
+    statusEl.textContent = 'No Bright Data API key set -- go to Settings and add your Bright Data key first.';
+    return;
+  }
+
   statusEl.textContent = 'Fetching via Bright Data...';
   resultEl.style.display = 'none';
   rawEl.style.display = 'none';
@@ -83,7 +158,6 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
     zone: config.zone
   });
 
-  btn.disabled = false;
   statusEl.textContent = '';
 
   if (response.success) {
@@ -122,8 +196,6 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
     resultEl.innerHTML = `<b>Lookup failed</b><div class="stats">${escapeHtml(response.error)}</div>`;
     resultEl.style.display = 'block';
 
-    // Always show diagnostics on failure -- even an empty response is
-    // useful information, so this no longer hides based on truthiness.
     const len = response.rawResponseLength ?? (response.rawResponse ? response.rawResponse.length : 0);
     if (len === 0) {
       rawEl.textContent = '(Bright Data returned an empty response body -- 0 bytes. This usually means the zone/product type does not support this kind of request, or the target blocked the fetch entirely.)';
@@ -132,7 +204,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
     }
     rawEl.style.display = 'block';
   }
-});
+}
 
 // ---------- Discover ----------
 document.getElementById('discoverBtn').addEventListener('click', async () => {

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   exportCsv: (creators) => ipcRenderer.invoke('export-csv', creators),
   lookupCreator: (payload) => ipcRenderer.invoke('lookup-creator', payload),
+  lookupCreatorApify: (payload) => ipcRenderer.invoke('lookup-creator-apify', payload),
   discoverCreators: (payload) => ipcRenderer.invoke('discover-creators', payload),
   restartAndInstall: () => ipcRenderer.invoke('restart-and-install'),
   checkForUpdatesNow: () => ipcRenderer.invoke('check-for-updates-now'),

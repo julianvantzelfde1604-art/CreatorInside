@@ -10,6 +10,79 @@ const dataDir = app.getPath('userData');
 const creatorsFile = path.join(dataDir, 'creators.json');
 const configFile = path.join(dataDir, 'config.json');
 
+// ---------- Apify (Instagram Profile Scraper) ----------
+// Verified for real via GitHub Actions using Julian's actual token before
+// this was wired in -- returns real structured data directly (followers,
+// verified status, bio, recent posts with likes/comments/timestamps), no
+// HTML parsing needed. This is the primary lookup path now; Bright Data
+// remains as a fallback further down.
+
+const APIFY_PROFILE_ACTOR_ID = 'dSCLg0C3YEZ83HzYX'; // apify/instagram-profile-scraper
+
+function fetchViaApify(usernames, apiToken) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ usernames });
+    const reqPath = `/v2/acts/${APIFY_PROFILE_ACTOR_ID}/run-sync-get-dataset-items?token=${encodeURIComponent(apiToken)}`;
+
+    const req = https.request(
+      {
+        hostname: 'api.apify.com',
+        path: reqPath,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        },
+        timeout: 60000
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+      }
+    );
+
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Apify request timed out after 60s.')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// Computes a real engagement rate from actual recent posts, instead of
+// trusting a black-box number from a third-party site. Uses up to the
+// last 12 posts Apify returned.
+function computeEngagementFromPosts(profile) {
+  const posts = Array.isArray(profile.latestPosts) ? profile.latestPosts.slice(0, 12) : [];
+  if (posts.length === 0 || !profile.followersCount) {
+    return { engagementRate: null, postsUsed: 0, mostRecentPostDate: null };
+  }
+
+  let totalInteractions = 0;
+  let counted = 0;
+  let mostRecentDate = null;
+
+  for (const post of posts) {
+    const likes = typeof post.likesCount === 'number' ? post.likesCount : 0;
+    const comments = typeof post.commentsCount === 'number' ? post.commentsCount : 0;
+    totalInteractions += likes + comments;
+    counted++;
+    if (post.timestamp) {
+      const d = new Date(post.timestamp);
+      if (!mostRecentDate || d > mostRecentDate) mostRecentDate = d;
+    }
+  }
+
+  const avgInteractions = totalInteractions / counted;
+  const engagementRate = (avgInteractions / profile.followersCount) * 100;
+
+  return {
+    engagementRate: Math.round(engagementRate * 100) / 100,
+    postsUsed: counted,
+    mostRecentPostDate: mostRecentDate ? mostRecentDate.toISOString() : null
+  };
+}
+
 function loadJson(file, fallback) {
   try {
     if (!fs.existsSync(file)) return fallback;
@@ -105,7 +178,7 @@ ipcMain.handle('save-creators', async (event, creators) => {
   }
 });
 
-ipcMain.handle('load-config', async () => loadJson(configFile, { apiKey: '', zone: '' }));
+ipcMain.handle('load-config', async () => loadJson(configFile, { apiKey: '', zone: '', apifyToken: '' }));
 
 ipcMain.handle('save-config', async (event, config) => {
   try {
@@ -224,6 +297,62 @@ function parseSocialBlade(html, username) {
   if (engagementMatch) result.engagementRate = parseFloat(engagementMatch[1]);
   return result;
 }
+
+ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken }) => {
+  if (!apiToken) {
+    return { success: false, error: 'No Apify API token set. Add it in Settings first.' };
+  }
+  const cleanUsername = username.replace(/^@/, '').trim();
+
+  try {
+    const response = await fetchViaApify([cleanUsername], apiToken);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return {
+        success: false,
+        error: `Apify returned HTTP ${response.statusCode}`,
+        rawResponse: response.body.slice(0, 2000)
+      };
+    }
+
+    let items;
+    try {
+      items = JSON.parse(response.body);
+    } catch (err) {
+      return { success: false, error: 'Apify response was not valid JSON.', rawResponse: response.body.slice(0, 2000) };
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return {
+        success: false,
+        error: `No profile data came back for @${cleanUsername} -- check the username is correct and the account is public.`,
+        rawResponse: response.body.slice(0, 2000)
+      };
+    }
+
+    const profile = items[0];
+    const engagement = computeEngagementFromPosts(profile);
+
+    return {
+      success: true,
+      data: {
+        username: profile.username || cleanUsername,
+        fullName: profile.fullName || null,
+        followers: profile.followersCount ?? null,
+        following: profile.followsCount ?? null,
+        postsCount: profile.postsCount ?? null,
+        verified: !!profile.verified,
+        biography: profile.biography || '',
+        externalUrl: profile.externalUrl || null,
+        engagementRate: engagement.engagementRate,
+        engagementPostsUsed: engagement.postsUsed,
+        mostRecentPostDate: engagement.mostRecentPostDate
+      }
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 ipcMain.handle('lookup-creator', async (event, { username, apiKey, zone }) => {
   if (!apiKey) {
