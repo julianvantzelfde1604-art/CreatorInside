@@ -16,12 +16,11 @@ jobs:
       - name: Try the request and capture everything about the response
         shell: bash
         run: |
-          echo "=== Instagram Profiles - collect by URL (sync /scrape) ===" > debug-output.txt
+          echo "=== Apify Instagram Profile Scraper via REST API ===" > debug-output.txt
           curl -s -w "\n[HTTP_STATUS:%{http_code}]\n" \
-            -X POST "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_l1vikfch901nx3by4&format=json" \
-            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
+            -X POST "https://api.apify.com/v2/acts/dSCLg0C3YEZ83HzYX/run-sync-get-dataset-items?token=${{ secrets.APIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '[{"url":"https://www.instagram.com/mama.shocks"}]' \
+            -d '{"usernames":["mama.shocks"]}' \
             >> debug-output.txt 2>&1
           cat debug-output.txt
 
