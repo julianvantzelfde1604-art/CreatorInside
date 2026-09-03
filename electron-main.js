@@ -354,6 +354,126 @@ ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken }) => 
   }
 });
 
+// ---------- Apify (Instagram Hashtag Scraper -- for Discover) ----------
+const APIFY_HASHTAG_ACTOR_ID = 'reGe1ST3OBgYZSsZJ'; // apify/instagram-hashtag-scraper
+
+function fetchHashtagPostsViaApify(hashtag, apiToken, resultsLimit) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ hashtags: [hashtag], resultsLimit });
+    const reqPath = `/v2/acts/${APIFY_HASHTAG_ACTOR_ID}/run-sync-get-dataset-items?token=${encodeURIComponent(apiToken)}`;
+
+    const req = https.request(
+      {
+        hostname: 'api.apify.com',
+        path: reqPath,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        },
+        timeout: 60000
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+      }
+    );
+
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Apify hashtag request timed out after 60s.')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers, maxFollowers, apiToken }) => {
+  if (!apiToken) {
+    return { success: false, error: 'No Apify API token set. Add it in Settings first.' };
+  }
+  const cleanTag = hashtag.replace(/^#/, '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!cleanTag) {
+    return { success: false, error: 'Enter a hashtag with at least one letter or number in it.' };
+  }
+
+  try {
+    const response = await fetchHashtagPostsViaApify(cleanTag, apiToken, MAX_CANDIDATES_PER_SEARCH * 2);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return { success: false, error: `Apify returned HTTP ${response.statusCode} for the hashtag search`, rawResponse: response.body.slice(0, 2000) };
+    }
+
+    let posts;
+    try {
+      posts = JSON.parse(response.body);
+    } catch (err) {
+      return { success: false, error: 'Apify hashtag response was not valid JSON.', rawResponse: response.body.slice(0, 2000) };
+    }
+
+    if (!Array.isArray(posts) || posts.length === 0) {
+      return { success: false, error: `No posts found for #${cleanTag}. Try a different or more common hashtag.` };
+    }
+
+    // Dedupe usernames, keeping order of first appearance.
+    const seen = new Set();
+    const candidates = [];
+    for (const post of posts) {
+      const uname = post.ownerUsername;
+      if (uname && !seen.has(uname)) {
+        seen.add(uname);
+        candidates.push(uname);
+      }
+      if (candidates.length >= MAX_CANDIDATES_PER_SEARCH) break;
+    }
+
+    if (candidates.length === 0) {
+      return { success: false, error: 'Found posts but none had a readable username on them.', rawResponse: JSON.stringify(posts.slice(0, 2), null, 2) };
+    }
+
+    const results = [];
+    const skipped = [];
+
+    for (const username of candidates) {
+      try {
+        const profileResponse = await fetchViaApify([username], apiToken);
+        if (profileResponse.statusCode < 200 || profileResponse.statusCode >= 300) {
+          skipped.push({ username, reason: `Profile fetch failed (HTTP ${profileResponse.statusCode})` });
+          continue;
+        }
+        const items = JSON.parse(profileResponse.body);
+        if (!Array.isArray(items) || items.length === 0) {
+          skipped.push({ username, reason: 'No profile data returned (may be private or deleted)' });
+          continue;
+        }
+        const profile = items[0];
+        const followers = profile.followersCount ?? null;
+        if (followers === null) {
+          skipped.push({ username, reason: 'Could not read follower count' });
+          continue;
+        }
+        if (followers < minFollowers || followers > maxFollowers) {
+          skipped.push({ username, reason: `${followers.toLocaleString()} followers -- outside your range` });
+          continue;
+        }
+        const engagement = computeEngagementFromPosts(profile);
+        results.push({
+          username: profile.username || username,
+          followers,
+          engagementRate: engagement.engagementRate,
+          verified: !!profile.verified,
+          biography: profile.biography || ''
+        });
+      } catch (err) {
+        skipped.push({ username, reason: err.message });
+      }
+    }
+
+    return { success: true, candidatesFound: candidates.length, results, skipped };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('lookup-creator', async (event, { username, apiKey, zone }) => {
   if (!apiKey) {
     return { success: false, error: 'No Bright Data API key set. Add it in Settings first.' };

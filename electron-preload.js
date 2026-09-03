@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   lookupCreator: (payload) => ipcRenderer.invoke('lookup-creator', payload),
   lookupCreatorApify: (payload) => ipcRenderer.invoke('lookup-creator-apify', payload),
   discoverCreators: (payload) => ipcRenderer.invoke('discover-creators', payload),
+  discoverCreatorsApify: (payload) => ipcRenderer.invoke('discover-creators-apify', payload),
   restartAndInstall: () => ipcRenderer.invoke('restart-and-install'),
   checkForUpdatesNow: () => ipcRenderer.invoke('check-for-updates-now'),
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data))

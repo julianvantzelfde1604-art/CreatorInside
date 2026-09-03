@@ -217,17 +217,17 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   const btn = document.getElementById('discoverBtn');
 
   if (!hashtag) { alert('Enter a hashtag first.'); return; }
-  if (!config.apiKey) {
-    statusEl.textContent = 'No API key set -- go to Settings and add your Bright Data key first.';
+  if (!config.apifyToken) {
+    statusEl.textContent = 'No Apify token set -- go to Settings and add it first.';
     return;
   }
 
   btn.disabled = true;
-  statusEl.textContent = 'Fetching hashtag page, then checking each candidate on SocialBlade (this can take a minute)...';
+  statusEl.textContent = 'Searching the hashtag, then checking each candidate\'s real numbers (this can take a minute)...';
   resultsEl.innerHTML = '';
   rawEl.style.display = 'none';
 
-  const response = await window.api.discoverCreators({ hashtag, minFollowers: min, maxFollowers: max, apiKey: config.apiKey, zone: config.zone });
+  const response = await window.api.discoverCreatorsApify({ hashtag, minFollowers: min, maxFollowers: max, apiToken: config.apifyToken });
 
   btn.disabled = false;
 
@@ -241,11 +241,11 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     return;
   }
 
-  statusEl.textContent = `Found ${response.candidatesFound} candidate(s) on the hashtag page, checked each on SocialBlade: ${response.results.length} matched your follower range, ${response.skipped.length} did not.`;
+  statusEl.textContent = `Found ${response.candidatesFound} candidate(s), verified each: ${response.results.length} matched your follower range, ${response.skipped.length} did not.`;
 
   resultsEl.innerHTML = response.results.map(d => `
     <div class="discover-card" data-username="${d.username}">
-      <span><b>@${escapeHtml(d.username)}</b> -- ${d.followers.toLocaleString()} followers, ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement</span>
+      <span><b>@${escapeHtml(d.username)}</b>${d.verified ? ' ✓' : ''} -- ${d.followers.toLocaleString()} followers, ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement</span>
       <button class="btn-secondary add-discover-btn" data-username="${d.username}" data-followers="${d.followers}" data-engagement="${d.engagementRate}">+ Add</button>
     </div>
   `).join('') + response.skipped.map(s => `

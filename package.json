@@ -1,6 +1,6 @@
 {
   "name": "creator-inside",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Creator prospecting app with Bright Data lookup",
   "main": "electron-main.js",
   "homepage": "./",
