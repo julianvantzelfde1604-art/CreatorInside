@@ -387,7 +387,9 @@ function fetchHashtagPostsViaApify(hashtag, apiToken, resultsLimit) {
   });
 }
 
-ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers, maxFollowers, apiToken }) => {
+const SAFETY_CAP_CANDIDATES_CHECKED = 80; // hard stop regardless of target, to bound API cost
+
+ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers, maxFollowers, minEngagement, targetCount, apiToken }) => {
   if (!apiToken) {
     return { success: false, error: 'No Apify API token set. Add it in Settings first.' };
   }
@@ -396,8 +398,15 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
     return { success: false, error: 'Enter a hashtag with at least one letter or number in it.' };
   }
 
+  const wantCount = Math.min(Math.max(parseInt(targetCount, 10) || 15, 1), SAFETY_CAP_CANDIDATES_CHECKED);
+  const minEng = typeof minEngagement === 'number' ? minEngagement : 0;
+
   try {
-    const response = await fetchHashtagPostsViaApify(cleanTag, apiToken, MAX_CANDIDATES_PER_SEARCH * 2);
+    // Pull a larger raw pool up front since not every candidate will
+    // pass followers + engagement together -- oversample based on how
+    // many we actually want.
+    const rawPoolSize = Math.min(wantCount * 4, SAFETY_CAP_CANDIDATES_CHECKED);
+    const response = await fetchHashtagPostsViaApify(cleanTag, apiToken, rawPoolSize);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return { success: false, error: `Apify returned HTTP ${response.statusCode} for the hashtag search`, rawResponse: response.body.slice(0, 2000) };
@@ -423,7 +432,6 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
         seen.add(uname);
         candidates.push(uname);
       }
-      if (candidates.length >= MAX_CANDIDATES_PER_SEARCH) break;
     }
 
     if (candidates.length === 0) {
@@ -432,8 +440,15 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
 
     const results = [];
     const skipped = [];
+    let checked = 0;
 
+    // Keep checking candidates until we hit the target count, run out
+    // of candidates, or hit the hard safety cap -- whichever comes first.
     for (const username of candidates) {
+      if (results.length >= wantCount) break;
+      if (checked >= SAFETY_CAP_CANDIDATES_CHECKED) break;
+      checked++;
+
       try {
         const profileResponse = await fetchViaApify([username], apiToken);
         if (profileResponse.statusCode < 200 || profileResponse.statusCode >= 300) {
@@ -456,6 +471,10 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
           continue;
         }
         const engagement = computeEngagementFromPosts(profile);
+        if (minEng > 0 && (engagement.engagementRate === null || engagement.engagementRate < minEng)) {
+          skipped.push({ username, reason: `${engagement.engagementRate !== null ? engagement.engagementRate + '%' : 'unknown'} engagement -- below your ${minEng}% minimum` });
+          continue;
+        }
         results.push({
           username: profile.username || username,
           followers,
@@ -468,7 +487,15 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
       }
     }
 
-    return { success: true, candidatesFound: candidates.length, results, skipped };
+    return {
+      success: true,
+      candidatesFound: candidates.length,
+      candidatesChecked: checked,
+      targetCount: wantCount,
+      hitTarget: results.length >= wantCount,
+      results,
+      skipped
+    };
   } catch (err) {
     return { success: false, error: err.message };
   }

@@ -211,6 +211,8 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   const hashtag = document.getElementById('discoverHashtag').value.trim();
   const min = parseInt(document.getElementById('discoverMin').value, 10) || 0;
   const max = parseInt(document.getElementById('discoverMax').value, 10) || Infinity;
+  const minEngagement = parseFloat(document.getElementById('discoverMinEngagement').value) || 0;
+  const targetCount = parseInt(document.getElementById('discoverTargetCount').value, 10) || 15;
   const statusEl = document.getElementById('discoverStatus');
   const resultsEl = document.getElementById('discoverResults');
   const rawEl = document.getElementById('discoverRaw');
@@ -223,11 +225,13 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   }
 
   btn.disabled = true;
-  statusEl.textContent = 'Searching the hashtag, then checking each candidate\'s real numbers (this can take a minute)...';
+  statusEl.textContent = `Looking for ${targetCount} matching creator(s) -- this checks candidates one by one and can take a while. Each check uses a small amount of your Apify credits.`;
   resultsEl.innerHTML = '';
   rawEl.style.display = 'none';
 
-  const response = await window.api.discoverCreatorsApify({ hashtag, minFollowers: min, maxFollowers: max, apiToken: config.apifyToken });
+  const response = await window.api.discoverCreatorsApify({
+    hashtag, minFollowers: min, maxFollowers: max, minEngagement, targetCount, apiToken: config.apifyToken
+  });
 
   btn.disabled = false;
 
@@ -241,7 +245,10 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     return;
   }
 
-  statusEl.textContent = `Found ${response.candidatesFound} candidate(s), verified each: ${response.results.length} matched your follower range, ${response.skipped.length} did not.`;
+  const targetMsg = response.hitTarget
+    ? `Found all ${response.results.length} you asked for.`
+    : `Only found ${response.results.length} of the ${response.targetCount} you asked for -- checked ${response.candidatesChecked} real candidates and ran out of ones that matched your criteria. Try a broader follower range, a lower engagement minimum, or a more active hashtag.`;
+  statusEl.textContent = `${targetMsg} (${response.skipped.length} candidates didn't qualify.)`;
 
   resultsEl.innerHTML = response.results.map(d => `
     <div class="discover-card" data-username="${d.username}">
