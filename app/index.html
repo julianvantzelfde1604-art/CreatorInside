@@ -22,6 +22,9 @@
         <button class="nav-btn" data-tab="creators">
           <span class="nav-icon">▤</span> Creator List
         </button>
+        <button class="nav-btn" data-tab="message">
+          <span class="nav-icon">✉</span> Message Composer
+        </button>
       </div>
 
       <div class="nav-group">
@@ -91,6 +94,37 @@
           <div id="discoverResults" class="discover-results"></div>
           <div id="discoverRaw" class="lookup-raw" style="display:none;"></div>
         </section>
+      </div>
+
+      <!-- ============ MESSAGE COMPOSER ============ -->
+      <div id="tab-message" class="tab-panel">
+        <header class="page-head">
+          <h1>Message Composer</h1>
+          <p>Write once, personalize per creator, copy and send yourself. Nothing here sends automatically -- that's on purpose, and keeps your account safe.</p>
+        </header>
+
+        <div class="message-layout">
+          <section class="panel message-left">
+            <div class="panel-head">
+              <h2>1. Write your message</h2>
+              <p class="hint">Use <code>{name}</code> anywhere you want their username inserted.</p>
+            </div>
+            <textarea id="messageTemplate" rows="7" placeholder="Hi {name}! I love your content -- I help creators like you turn your audience into a digital product. Would you be open to a quick chat?"></textarea>
+
+            <div class="panel-head" style="margin-top:20px;">
+              <h2>2. Pick who to message</h2>
+            </div>
+            <div id="messageCreatorPicker" class="picker-list"></div>
+          </section>
+
+          <section class="panel message-right">
+            <div class="panel-head">
+              <h2>3. Copy and send yourself</h2>
+              <p class="hint">Paste each one into Instagram DMs by hand -- manual sending is what keeps this from looking like a bot to Instagram.</p>
+            </div>
+            <div id="messagePreviews"></div>
+          </section>
+        </div>
       </div>
 
       <!-- ============ CREATOR LIST ============ -->

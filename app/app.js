@@ -33,6 +33,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'message') renderMessagePicker();
   });
 });
 
@@ -282,6 +283,69 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     });
   });
 });
+
+// ---------- Message Composer ----------
+let selectedForMessage = new Set();
+
+function renderMessagePicker() {
+  const picker = document.getElementById('messageCreatorPicker');
+  if (creators.length === 0) {
+    picker.innerHTML = '<div class="picker-row">Add creators in Find Creators or Creator List first.</div>';
+    document.getElementById('messagePreviews').innerHTML = '';
+    return;
+  }
+  picker.innerHTML = creators.map(c => `
+    <div class="picker-row">
+      <input type="checkbox" class="pick-check" data-id="${c.id}" ${selectedForMessage.has(c.id) ? 'checked' : ''}>
+      <span>@${escapeHtml(c.username)} -- ${c.followers.toLocaleString()} followers</span>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.pick-check').forEach(chk => {
+    chk.addEventListener('change', (e) => {
+      const id = e.target.dataset.id;
+      if (e.target.checked) selectedForMessage.add(id);
+      else selectedForMessage.delete(id);
+      renderMessagePreviews();
+    });
+  });
+
+  renderMessagePreviews();
+}
+
+document.getElementById('messageTemplate').addEventListener('input', renderMessagePreviews);
+
+function renderMessagePreviews() {
+  const container = document.getElementById('messagePreviews');
+  const template = document.getElementById('messageTemplate').value;
+  const selected = creators.filter(c => selectedForMessage.has(c.id));
+
+  if (selected.length === 0) {
+    container.innerHTML = '<p class="hint">Check creators on the left to preview their messages here.</p>';
+    return;
+  }
+
+  container.innerHTML = selected.map(c => {
+    const text = template.replace(/\{name\}/g, c.username);
+    return `
+      <div class="preview-card">
+        <div class="preview-header">
+          <b>@${escapeHtml(c.username)}</b>
+          <button class="btn-secondary copy-msg-btn" data-text="${encodeURIComponent(text)}">Copy</button>
+        </div>
+        <p>${escapeHtml(text)}</p>
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('.copy-msg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(decodeURIComponent(btn.dataset.text));
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+    });
+  });
+}
 
 // ---------- Creators tab ----------
 ['filterMin', 'filterMax'].forEach(id => {
