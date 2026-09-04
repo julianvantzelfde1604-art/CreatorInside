@@ -187,6 +187,8 @@
             <label>Apify API Token</label>
             <input type="password" id="settingsApifyToken" placeholder="apify_api_...">
           </div>
+          <button class="btn-secondary" id="verifyApifyBtn">Verify Token</button>
+          <div id="verifyApifyResult" class="verify-result"></div>
         </section>
 
         <section class="panel panel-narrow">
@@ -205,7 +207,9 @@
             <label>Zone</label>
             <input type="text" id="settingsZone" placeholder="e.g. web_unlocker1">
           </div>
-          <button class="btn-primary" id="saveSettingsBtn">Save All</button>
+          <button class="btn-secondary" id="verifyBrightDataBtn">Verify Key &amp; Zone</button>
+          <div id="verifyBrightDataResult" class="verify-result"></div>
+          <button class="btn-primary" id="saveSettingsBtn" style="margin-top:14px;">Save All</button>
           <div id="settingsSaved" class="saved-msg" style="display:none;">Saved.</div>
         </section>
       </div>

@@ -180,6 +180,77 @@ ipcMain.handle('save-creators', async (event, creators) => {
 
 ipcMain.handle('load-config', async () => loadJson(configFile, { apiKey: '', zone: '', apifyToken: '' }));
 
+ipcMain.handle('verify-apify-token', async (event, { apiToken }) => {
+  if (!apiToken) return { success: false, error: 'No token entered.' };
+
+  return new Promise((resolve) => {
+    const req = https.request(
+      {
+        hostname: 'api.apify.com',
+        path: `/v2/users/me?token=${encodeURIComponent(apiToken)}`,
+        method: 'GET',
+        timeout: 15000
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const parsed = JSON.parse(body);
+              resolve({ success: true, username: parsed.data?.username || null });
+            } catch (err) {
+              resolve({ success: false, error: 'Got a response but could not read it.' });
+            }
+          } else {
+            resolve({ success: false, error: `Apify rejected this token (HTTP ${res.statusCode}).` });
+          }
+        });
+      }
+    );
+    req.on('error', (err) => resolve({ success: false, error: err.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'Timed out contacting Apify.' }); });
+    req.end();
+  });
+});
+
+ipcMain.handle('verify-brightdata-credentials', async (event, { apiKey, zone }) => {
+  if (!apiKey) return { success: false, error: 'No API key entered.' };
+
+  return new Promise((resolve) => {
+    const req = https.request(
+      {
+        hostname: 'api.brightdata.com',
+        path: '/zone/get_active_zones',
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        timeout: 15000
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const zones = JSON.parse(body);
+              const zoneNames = Array.isArray(zones) ? zones.map(z => z.name) : [];
+              const zoneMatches = zone ? zoneNames.includes(zone) : null;
+              resolve({ success: true, zoneNames, zoneMatches, enteredZone: zone });
+            } catch (err) {
+              resolve({ success: false, error: 'Got a response but could not read it.' });
+            }
+          } else {
+            resolve({ success: false, error: `Bright Data rejected this key (HTTP ${res.statusCode}).` });
+          }
+        });
+      }
+    );
+    req.on('error', (err) => resolve({ success: false, error: err.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'Timed out contacting Bright Data.' }); });
+    req.end();
+  });
+});
+
 ipcMain.handle('save-config', async (event, config) => {
   try {
     saveJson(configFile, config);

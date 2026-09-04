@@ -61,6 +61,52 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async () =>
   setTimeout(() => { msg.style.display = 'none'; }, 2000);
 });
 
+document.getElementById('verifyApifyBtn').addEventListener('click', async () => {
+  const token = document.getElementById('settingsApifyToken').value.trim();
+  const resultEl = document.getElementById('verifyApifyResult');
+  resultEl.className = 'verify-result';
+  resultEl.textContent = 'Checking...';
+  resultEl.style.display = 'block';
+
+  const result = await window.api.verifyApifyToken({ apiToken: token });
+
+  if (result.success) {
+    resultEl.className = 'verify-result ok';
+    resultEl.textContent = `Valid -- connected as Apify user "${result.username}".`;
+  } else {
+    resultEl.className = 'verify-result fail';
+    resultEl.textContent = result.error;
+  }
+});
+
+document.getElementById('verifyBrightDataBtn').addEventListener('click', async () => {
+  const apiKey = document.getElementById('settingsApiKey').value.trim();
+  const zone = document.getElementById('settingsZone').value.trim();
+  const resultEl = document.getElementById('verifyBrightDataResult');
+  resultEl.className = 'verify-result';
+  resultEl.textContent = 'Checking...';
+  resultEl.style.display = 'block';
+
+  const result = await window.api.verifyBrightDataCredentials({ apiKey, zone });
+
+  if (!result.success) {
+    resultEl.className = 'verify-result fail';
+    resultEl.textContent = result.error;
+    return;
+  }
+
+  if (!zone) {
+    resultEl.className = 'verify-result ok';
+    resultEl.textContent = `Key is valid. Zones on your account: ${result.zoneNames.join(', ') || '(none found)'}.`;
+  } else if (result.zoneMatches) {
+    resultEl.className = 'verify-result ok';
+    resultEl.textContent = `Key is valid and "${zone}" is a real zone on your account.`;
+  } else {
+    resultEl.className = 'verify-result fail';
+    resultEl.textContent = `Key is valid, but "${zone}" doesn't match any zone on your account. Your real zones: ${result.zoneNames.join(', ') || '(none found)'}.`;
+  }
+});
+
 // ---------- Lookup ----------
 document.getElementById('lookupBtn').addEventListener('click', async () => {
   const username = document.getElementById('lookupUsername').value.trim();

@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   discoverCreatorsApify: (payload) => ipcRenderer.invoke('discover-creators-apify', payload),
   restartAndInstall: () => ipcRenderer.invoke('restart-and-install'),
   checkForUpdatesNow: () => ipcRenderer.invoke('check-for-updates-now'),
+  verifyApifyToken: (payload) => ipcRenderer.invoke('verify-apify-token', payload),
+  verifyBrightDataCredentials: (payload) => ipcRenderer.invoke('verify-brightdata-credentials', payload),
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data))
 });
