@@ -16,9 +16,10 @@ jobs:
       - name: Try the request and capture everything about the response
         shell: bash
         run: |
-          echo "=== Apify token verification endpoint ===" > debug-output.txt
+          echo "=== Bright Data zones list (verification check) ===" > debug-output.txt
           curl -s -w "\n[HTTP_STATUS:%{http_code}]\n" \
-            "https://api.apify.com/v2/users/me?token=${{ secrets.APIFY_TOKEN }}" \
+            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
+            "https://api.brightdata.com/zone/get_active_zones" \
             >> debug-output.txt 2>&1
           cat debug-output.txt
 
