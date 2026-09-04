@@ -1,0 +1,3 @@
+=== Bright Data zones list (verification check) ===
+[{"name":"web_unlocker1","type":"unblocker"}]
+[HTTP_STATUS:200]
