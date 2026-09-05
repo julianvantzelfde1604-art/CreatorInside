@@ -531,7 +531,33 @@ function fetchHashtagPostsViaApify(hashtag, apiToken, resultsLimit) {
 
 const SAFETY_CAP_CANDIDATES_CHECKED = 80; // hard stop regardless of target, to bound API cost
 
-ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers, maxFollowers, minEngagement, targetCount, apiToken }) => {
+// Cross-checks a follower count against Bright Data/SocialBlade, independent
+// of the Apify number. Returns null (not zero, not a guess) if the check
+// itself fails for any reason -- a failed cross-check should never be
+// mistaken for "SocialBlade says zero."
+async function crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone) {
+  if (!brightDataKey) return { followers: null, reason: 'No Bright Data key set' };
+  try {
+    const sbUrl = `https://socialblade.com/instagram/user/${username}`;
+    const response = await fetchViaBrightData(sbUrl, brightDataKey, brightDataZone);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return { followers: null, reason: `Bright Data HTTP ${response.statusCode}` };
+    }
+    const unwrapped = unwrapBrightDataResponse(response.body);
+    if (unwrapped.brightDataError) {
+      return { followers: null, reason: unwrapped.brightDataError };
+    }
+    const parsed = parseSocialBlade(unwrapped.html || '', username);
+    if (parsed.followers === null) {
+      return { followers: null, reason: 'Could not read followers from SocialBlade page' };
+    }
+    return { followers: parsed.followers, reason: null };
+  } catch (err) {
+    return { followers: null, reason: err.message };
+  }
+}
+
+ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers, maxFollowers, minEngagement, targetCount, apiToken, brightDataKey, brightDataZone }) => {
   if (!apiToken) {
     return { success: false, error: 'No Apify API token set. Add it in Settings first.' };
   }
@@ -617,9 +643,17 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
           skipped.push({ username, reason: `${engagement.engagementRate !== null ? engagement.engagementRate + '%' : 'unknown'} engagement -- below your ${minEng}% minimum` });
           continue;
         }
+
+        // Cross-check the follower count against an independent source.
+        // A mismatch or failed check is shown, never hidden or silently
+        // trusted as agreement.
+        const crossCheck = await crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone);
+
         results.push({
           username: profile.username || username,
           followers,
+          brightDataFollowers: crossCheck.followers,
+          brightDataCheckFailed: crossCheck.reason,
           engagementRate: engagement.engagementRate,
           verified: !!profile.verified,
           biography: profile.biography || ''

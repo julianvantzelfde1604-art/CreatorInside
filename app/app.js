@@ -277,7 +277,8 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   rawEl.style.display = 'none';
 
   const response = await window.api.discoverCreatorsApify({
-    hashtag, minFollowers: min, maxFollowers: max, minEngagement, targetCount, apiToken: config.apifyToken
+    hashtag, minFollowers: min, maxFollowers: max, minEngagement, targetCount,
+    apiToken: config.apifyToken, brightDataKey: config.apiKey, brightDataZone: config.zone
   });
 
   btn.disabled = false;
@@ -297,12 +298,25 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     : `Only found ${response.results.length} of the ${response.targetCount} you asked for -- checked ${response.candidatesChecked} real candidates and ran out of ones that matched your criteria. Try a broader follower range, a lower engagement minimum, or a more active hashtag.`;
   statusEl.textContent = `${targetMsg} (${response.skipped.length} candidates didn't qualify.)`;
 
-  resultsEl.innerHTML = response.results.map(d => `
+  resultsEl.innerHTML = response.results.map(d => {
+    let crossCheckLine;
+    if (d.brightDataFollowers !== null && d.brightDataFollowers !== undefined) {
+      const diff = Math.abs(d.brightDataFollowers - d.followers);
+      const diffPct = d.followers > 0 ? ((diff / d.followers) * 100).toFixed(1) : '0';
+      crossCheckLine = `Bright Data/SocialBlade agrees: ${d.brightDataFollowers.toLocaleString()} followers (${diffPct}% difference)`;
+    } else {
+      crossCheckLine = `Bright Data cross-check unavailable (${escapeHtml(d.brightDataCheckFailed || 'unknown reason')})`;
+    }
+    return `
     <div class="discover-card" data-username="${d.username}">
-      <span><b>@${escapeHtml(d.username)}</b>${d.verified ? ' ✓' : ''} -- ${d.followers.toLocaleString()} followers, ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement</span>
+      <div>
+        <span><b>@${escapeHtml(d.username)}</b>${d.verified ? ' ✓' : ''} -- ${d.followers.toLocaleString()} followers (Apify), ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement</span>
+        <div style="font-size:11px; color:var(--ink-soft); margin-top:2px; font-family:var(--font-data);">${crossCheckLine}</div>
+      </div>
       <button class="btn-secondary add-discover-btn" data-username="${d.username}" data-followers="${d.followers}" data-engagement="${d.engagementRate}">+ Add</button>
     </div>
-  `).join('') + response.skipped.map(s => `
+  `;
+  }).join('') + response.skipped.map(s => `
     <div class="discover-skip">@${escapeHtml(s.username)} skipped -- ${escapeHtml(s.reason)}</div>
   `).join('');
 
