@@ -94,6 +94,28 @@
           <div id="discoverResults" class="discover-results"></div>
           <div id="discoverRaw" class="lookup-raw" style="display:none;"></div>
         </section>
+
+        <div class="divider"><span>or</span></div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Bulk check a list you already have</h2>
+            <p class="hint">
+              Paste up to 50 usernames, one per line. Each one gets checked for real
+              via Apify -- this doesn't search for new creators, it verifies the
+              ones you already found.
+            </p>
+          </div>
+          <textarea id="bulkUsernames" rows="6" placeholder="mama.shocks&#10;caitlynneier&#10;aubreymatthesius"></textarea>
+          <div class="discover-grid" style="margin-top:12px;">
+            <input type="number" id="bulkMin" placeholder="min followers" value="10000">
+            <input type="number" id="bulkMax" placeholder="max followers" value="120000">
+            <input type="number" id="bulkMinEngagement" placeholder="min engagement % (optional)" step="0.1">
+          </div>
+          <button class="btn-primary" id="bulkCheckBtn">Check All</button>
+          <div id="bulkStatus" class="lookup-status"></div>
+          <div id="bulkResults" class="discover-results"></div>
+        </section>
       </div>
 
       <!-- ============ MESSAGE COMPOSER ============ -->

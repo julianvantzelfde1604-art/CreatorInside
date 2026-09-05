@@ -369,6 +369,77 @@ function parseSocialBlade(html, username) {
   return result;
 }
 
+const BULK_CHECK_MAX = 50; // hard cap to keep cost/time predictable
+
+ipcMain.handle('bulk-check-apify', async (event, { usernames, minFollowers, maxFollowers, minEngagement, apiToken }) => {
+  if (!apiToken) {
+    return { success: false, error: 'No Apify API token set. Add it in Settings first.' };
+  }
+  if (!Array.isArray(usernames) || usernames.length === 0) {
+    return { success: false, error: 'No usernames provided.' };
+  }
+
+  const cleanList = usernames
+    .map(u => u.replace(/^@/, '').trim())
+    .filter(u => u.length > 0)
+    .slice(0, BULK_CHECK_MAX);
+
+  const minEng = typeof minEngagement === 'number' ? minEngagement : 0;
+  const results = [];
+  const skipped = [];
+
+  for (let i = 0; i < cleanList.length; i++) {
+    const username = cleanList[i];
+
+    if (mainWindow) {
+      mainWindow.webContents.send('bulk-check-progress', {
+        current: i + 1,
+        total: cleanList.length,
+        username
+      });
+    }
+
+    try {
+      const response = await fetchViaApify([username], apiToken);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        skipped.push({ username, reason: `Apify HTTP ${response.statusCode}` });
+        continue;
+      }
+      const items = JSON.parse(response.body);
+      if (!Array.isArray(items) || items.length === 0) {
+        skipped.push({ username, reason: 'No profile data (private, deleted, or wrong username)' });
+        continue;
+      }
+      const profile = items[0];
+      const followers = profile.followersCount ?? null;
+      if (followers === null) {
+        skipped.push({ username, reason: 'Could not read follower count' });
+        continue;
+      }
+      if (followers < minFollowers || followers > maxFollowers) {
+        skipped.push({ username, reason: `${followers.toLocaleString()} followers -- outside your range` });
+        continue;
+      }
+      const engagement = computeEngagementFromPosts(profile);
+      if (minEng > 0 && (engagement.engagementRate === null || engagement.engagementRate < minEng)) {
+        skipped.push({ username, reason: `${engagement.engagementRate !== null ? engagement.engagementRate + '%' : 'unknown'} engagement -- below your ${minEng}% minimum` });
+        continue;
+      }
+      results.push({
+        username: profile.username || username,
+        followers,
+        engagementRate: engagement.engagementRate,
+        verified: !!profile.verified,
+        biography: profile.biography || ''
+      });
+    } catch (err) {
+      skipped.push({ username, reason: err.message });
+    }
+  }
+
+  return { success: true, totalChecked: cleanList.length, results, skipped };
+});
+
 ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken }) => {
   if (!apiToken) {
     return { success: false, error: 'No Apify API token set. Add it in Settings first.' };

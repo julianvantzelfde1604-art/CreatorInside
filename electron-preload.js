@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
   exportCsv: (creators) => ipcRenderer.invoke('export-csv', creators),
   lookupCreator: (payload) => ipcRenderer.invoke('lookup-creator', payload),
   lookupCreatorApify: (payload) => ipcRenderer.invoke('lookup-creator-apify', payload),
+  bulkCheckApify: (payload) => ipcRenderer.invoke('bulk-check-apify', payload),
+  onBulkCheckProgress: (callback) => ipcRenderer.on('bulk-check-progress', (event, data) => callback(data)),
   discoverCreators: (payload) => ipcRenderer.invoke('discover-creators', payload),
   discoverCreatorsApify: (payload) => ipcRenderer.invoke('discover-creators-apify', payload),
   restartAndInstall: () => ipcRenderer.invoke('restart-and-install'),

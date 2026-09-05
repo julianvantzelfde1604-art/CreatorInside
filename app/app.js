@@ -393,6 +393,114 @@ function renderMessagePreviews() {
   });
 }
 
+// ---------- Bulk Check ----------
+let bulkResultsCache = [];
+
+window.api.onBulkCheckProgress((data) => {
+  const statusEl = document.getElementById('bulkStatus');
+  statusEl.textContent = `Checking ${data.current} of ${data.total}: @${data.username}...`;
+});
+
+document.getElementById('bulkCheckBtn').addEventListener('click', async () => {
+  const raw = document.getElementById('bulkUsernames').value;
+  const usernames = raw.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+  const min = parseInt(document.getElementById('bulkMin').value, 10) || 0;
+  const max = parseInt(document.getElementById('bulkMax').value, 10) || Infinity;
+  const minEngagement = parseFloat(document.getElementById('bulkMinEngagement').value) || 0;
+  const statusEl = document.getElementById('bulkStatus');
+  const resultsEl = document.getElementById('bulkResults');
+  const btn = document.getElementById('bulkCheckBtn');
+
+  if (usernames.length === 0) { alert('Paste at least one username first.'); return; }
+  if (!config.apifyToken) {
+    statusEl.textContent = 'No Apify token set -- go to Settings and add it first.';
+    return;
+  }
+  if (usernames.length > 50) {
+    alert('Capped at 50 per batch -- only the first 50 will be checked.');
+  }
+
+  btn.disabled = true;
+  resultsEl.innerHTML = '';
+  statusEl.textContent = `Starting check of ${Math.min(usernames.length, 50)} usernames...`;
+
+  const response = await window.api.bulkCheckApify({
+    usernames, minFollowers: min, maxFollowers: max, minEngagement, apiToken: config.apifyToken
+  });
+
+  btn.disabled = false;
+
+  if (!response.success) {
+    statusEl.textContent = '';
+    resultsEl.innerHTML = `<div class="discover-skip"><b>Bulk check failed:</b> ${escapeHtml(response.error)}</div>`;
+    return;
+  }
+
+  bulkResultsCache = response.results;
+  statusEl.textContent = `Checked ${response.totalChecked}: ${response.results.length} matched your criteria, ${response.skipped.length} did not.`;
+
+  const addAllBtn = response.results.length > 0
+    ? `<button class="btn-secondary" id="addAllBulkBtn" style="margin-bottom:8px;">+ Add all ${response.results.length} to Creator List</button>`
+    : '';
+
+  resultsEl.innerHTML = addAllBtn + response.results.map(d => `
+    <div class="discover-card" data-username="${d.username}">
+      <span><b>@${escapeHtml(d.username)}</b>${d.verified ? ' ✓' : ''} -- ${d.followers.toLocaleString()} followers, ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement</span>
+      <button class="btn-secondary add-bulk-btn" data-username="${d.username}" data-followers="${d.followers}" data-engagement="${d.engagementRate}">+ Add</button>
+    </div>
+  `).join('') + response.skipped.map(s => `
+    <div class="discover-skip">@${escapeHtml(s.username)} skipped -- ${escapeHtml(s.reason)}</div>
+  `).join('');
+
+  document.querySelectorAll('.add-bulk-btn').forEach(b => {
+    b.addEventListener('click', () => addOneFromBulk(b.dataset.username, b.dataset.followers, b.dataset.engagement, b));
+  });
+
+  const addAll = document.getElementById('addAllBulkBtn');
+  if (addAll) {
+    addAll.addEventListener('click', async () => {
+      let added = 0;
+      for (const d of bulkResultsCache) {
+        if (!creators.some(c => c.username.toLowerCase() === d.username.toLowerCase())) {
+          creators.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            username: d.username,
+            followers: d.followers,
+            engagement: d.engagementRate,
+            status: 'Not Contacted',
+            instagramUrl: `https://instagram.com/${d.username}`,
+            socialBladeUrl: `https://socialblade.com/instagram/user/${d.username}`
+          });
+          added++;
+        }
+      }
+      await window.api.saveCreators(creators);
+      renderCreators();
+      alert(`Added ${added} new creator(s) (skipped any already in your list).`);
+    });
+  }
+});
+
+async function addOneFromBulk(username, followersStr, engagementStr, btn) {
+  if (creators.some(c => c.username.toLowerCase() === username.toLowerCase())) {
+    alert('Already in your list.');
+    return;
+  }
+  creators.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    username,
+    followers: parseInt(followersStr, 10),
+    engagement: engagementStr !== 'null' ? parseFloat(engagementStr) : null,
+    status: 'Not Contacted',
+    instagramUrl: `https://instagram.com/${username}`,
+    socialBladeUrl: `https://socialblade.com/instagram/user/${username}`
+  });
+  await window.api.saveCreators(creators);
+  renderCreators();
+  btn.textContent = 'Added ✓';
+  btn.disabled = true;
+}
+
 // ---------- Creators tab ----------
 ['filterMin', 'filterMax'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderCreators);
