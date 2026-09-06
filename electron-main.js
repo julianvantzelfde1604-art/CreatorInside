@@ -640,10 +640,17 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
   const minEng = typeof minEngagement === 'number' ? minEngagement : 0;
 
   try {
-    // Pull a larger raw pool up front since not every candidate will
-    // pass followers + engagement together -- oversample based on how
-    // many we actually want.
-    const rawPoolSize = Math.min(wantCount * 4, SAFETY_CAP_CANDIDATES_CHECKED);
+    // Fetching more raw posts from the hashtag is cheap -- it's one search
+    // call regardless of size. The real cost is per-candidate profile
+    // checks, which is already bounded by SAFETY_CAP_CANDIDATES_CHECKED
+    // below. So always request a generous raw pool, independent of how
+    // small the target count is -- a small target shouldn't mean a
+    // starved search. This was the actual bug behind getting almost no
+    // real matches on a small target: the old formula (wantCount * 4)
+    // gave a target of 3 only 12 raw posts to work with, which is nowhere
+    // near enough given how heavily a hashtag's "recent" feed skews
+    // toward tiny/spam accounts over established creators.
+    const rawPoolSize = 150;
     const response = await fetchHashtagPostsViaApify(cleanTag, apiToken, rawPoolSize);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
