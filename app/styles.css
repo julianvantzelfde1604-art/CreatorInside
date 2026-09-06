@@ -246,6 +246,17 @@ body {
 }
 .discover-grid input:focus { outline: none; border-color: var(--brass); background: var(--paper-raised); }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+.checkbox-row input { cursor: pointer; }
+
 /* ============ BUTTONS ============ */
 
 .btn-primary {
@@ -324,6 +335,22 @@ body {
   background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px;
   font-size: 11.5px; color: var(--ink-soft); font-family: var(--font-data);
 }
+
+.content-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-left: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: help;
+}
+.tag-advice { background: var(--verified-bg); color: var(--verified); }
+.tag-lifestyle { background: var(--flag-bg); color: var(--flag); }
+.tag-mixed { background: #FEF3C7; color: #92400E; }
+.tag-unclear { background: var(--line-soft); color: var(--ink-soft); }
 
 /* ============ SETTINGS ============ */
 

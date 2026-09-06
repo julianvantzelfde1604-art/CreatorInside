@@ -293,12 +293,20 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     return;
   }
 
+  const onlyAdvice = document.getElementById('discoverOnlyAdvice').checked;
+  const displayResults = onlyAdvice
+    ? response.results.filter(d => d.contentType === 'advice/education')
+    : response.results;
+
   const targetMsg = response.hitTarget
     ? `Found all ${response.results.length} you asked for.`
     : `Only found ${response.results.length} of the ${response.targetCount} you asked for -- checked ${response.candidatesChecked} real candidates and ran out of ones that matched your criteria. Try a broader follower range, a lower engagement minimum, or a more active hashtag.`;
-  statusEl.textContent = `${targetMsg} (${response.skipped.length} candidates didn't qualify.)`;
+  const filterNote = onlyAdvice ? ` Showing ${displayResults.length} tagged "advice/education."` : '';
+  statusEl.textContent = `${targetMsg} (${response.skipped.length} candidates didn't qualify.)${filterNote}`;
 
-  resultsEl.innerHTML = response.results.map(d => {
+  const contentTagClass = { 'advice/education': 'tag-advice', 'lifestyle': 'tag-lifestyle', 'mixed': 'tag-mixed', 'unclear': 'tag-unclear' };
+
+  resultsEl.innerHTML = displayResults.map(d => {
     let crossCheckLine;
     if (d.brightDataFollowers !== null && d.brightDataFollowers !== undefined) {
       const diff = Math.abs(d.brightDataFollowers - d.followers);
@@ -307,10 +315,14 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     } else {
       crossCheckLine = `Bright Data cross-check unavailable (${escapeHtml(d.brightDataCheckFailed || 'unknown reason')})`;
     }
+    const tagClass = contentTagClass[d.contentType] || 'tag-unclear';
+    const signalsTitle = d.contentSignals && d.contentSignals.length > 0 ? `title="Matched: ${escapeHtml(d.contentSignals.join(', '))}"` : '';
     return `
     <div class="discover-card" data-username="${d.username}">
       <div>
-        <span><b>@${escapeHtml(d.username)}</b>${d.verified ? ' ✓' : ''} -- ${d.followers.toLocaleString()} followers (Apify), ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement</span>
+        <span><b>@${escapeHtml(d.username)}</b>${d.verified ? ' ✓' : ''} -- ${d.followers.toLocaleString()} followers (Apify), ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '%' : 'unknown'} engagement
+          <span class="content-tag ${tagClass}" ${signalsTitle}>${d.contentType}</span>
+        </span>
         <div style="font-size:11px; color:var(--ink-soft); margin-top:2px; font-family:var(--font-data);">${crossCheckLine}</div>
       </div>
       <button class="btn-secondary add-discover-btn" data-username="${d.username}" data-followers="${d.followers}" data-engagement="${d.engagementRate}">+ Add</button>

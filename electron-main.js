@@ -52,6 +52,55 @@ function fetchViaApify(usernames, apiToken) {
 // Computes a real engagement rate from actual recent posts, instead of
 // trusting a black-box number from a third-party site. Uses up to the
 // last 12 posts Apify returned.
+// Rough, honest heuristic -- not real content understanding. Looks for
+// keyword signals in the bio and recent captions to guess "advice/education"
+// vs "lifestyle" content. Will get some wrong; shown as a visible tag you
+// can override, never used to silently hide results.
+const ADVICE_KEYWORDS = [
+  'tips', 'advice', 'coach', 'therapist', 'psychologist', 'counselor',
+  'how to', 'parenting', 'guide', 'learn', 'teach', 'strategies',
+  'discipline', 'development', 'expert', 'educator', 'pediatric',
+  'specialist', 'certified', 'phd', 'lmft', 'msw', 'evidence-based'
+];
+const LIFESTYLE_KEYWORDS = [
+  'shop my look', 'ootd', 'sponsored', ' ad ', 'fashion', 'travel blogger',
+  'makeup', 'beauty', 'vlog', 'lifestyle blogger', 'outfit', 'haul',
+  'get ready with me', 'grwm', 'discount code', 'promo code', 'linktr.ee'
+];
+
+function classifyContentType(profile) {
+  const bio = (profile.biography || '').toLowerCase();
+  const captions = Array.isArray(profile.latestPosts)
+    ? profile.latestPosts.slice(0, 8).map(p => (p.caption || '').toLowerCase()).join(' ')
+    : '';
+  const combined = bio + ' ' + captions;
+
+  let adviceScore = 0;
+  let lifestyleScore = 0;
+  const matchedAdvice = [];
+  const matchedLifestyle = [];
+
+  for (const kw of ADVICE_KEYWORDS) {
+    if (combined.includes(kw)) { adviceScore++; matchedAdvice.push(kw); }
+  }
+  for (const kw of LIFESTYLE_KEYWORDS) {
+    if (combined.includes(kw)) { lifestyleScore++; matchedLifestyle.push(kw); }
+  }
+
+  let label;
+  if (adviceScore === 0 && lifestyleScore === 0) {
+    label = 'unclear';
+  } else if (adviceScore > lifestyleScore) {
+    label = 'advice/education';
+  } else if (lifestyleScore > adviceScore) {
+    label = 'lifestyle';
+  } else {
+    label = 'mixed';
+  }
+
+  return { label, matchedAdvice, matchedLifestyle };
+}
+
 function computeEngagementFromPosts(profile) {
   const posts = Array.isArray(profile.latestPosts) ? profile.latestPosts.slice(0, 12) : [];
   if (posts.length === 0 || !profile.followersCount) {
@@ -535,7 +584,17 @@ const SAFETY_CAP_CANDIDATES_CHECKED = 80; // hard stop regardless of target, to 
 // of the Apify number. Returns null (not zero, not a guess) if the check
 // itself fails for any reason -- a failed cross-check should never be
 // mistaken for "SocialBlade says zero."
-async function crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone) {
+// Cross-checks a follower count against Bright Data/SocialBlade, independent
+// of the Apify number. Returns null (not zero, not a guess) if the check
+// itself fails for any reason -- a failed cross-check should never be
+// mistaken for "SocialBlade says zero."
+//
+// referenceFollowers (Apify's already-trusted number) is used as a sanity
+// bound: the SocialBlade page parser is a loose regex, and if it grabs a
+// wildly wrong number (like a stray "5" from somewhere else on the page),
+// that's a parsing failure, not a real disagreement -- and should be
+// reported as "unavailable," not displayed as a fact.
+async function crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone, referenceFollowers) {
   if (!brightDataKey) return { followers: null, reason: 'No Bright Data key set' };
   try {
     const sbUrl = `https://socialblade.com/instagram/user/${username}`;
@@ -551,6 +610,17 @@ async function crossCheckFollowersViaBrightData(username, brightDataKey, brightD
     if (parsed.followers === null) {
       return { followers: null, reason: 'Could not read followers from SocialBlade page' };
     }
+
+    // Sanity bound: if the two numbers disagree by more than 10x in either
+    // direction, this is almost certainly a bad regex match, not a real
+    // discrepancy between two live follower counts.
+    if (referenceFollowers && referenceFollowers > 0) {
+      const ratio = parsed.followers / referenceFollowers;
+      if (ratio < 0.1 || ratio > 10) {
+        return { followers: null, reason: `Parsed a number (${parsed.followers}) too far off from Apify's count to trust -- likely a bad match on the page, not a real discrepancy` };
+      }
+    }
+
     return { followers: parsed.followers, reason: null };
   } catch (err) {
     return { followers: null, reason: err.message };
@@ -647,7 +717,8 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
         // Cross-check the follower count against an independent source.
         // A mismatch or failed check is shown, never hidden or silently
         // trusted as agreement.
-        const crossCheck = await crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone);
+        const crossCheck = await crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone, followers);
+        const contentType = classifyContentType(profile);
 
         results.push({
           username: profile.username || username,
@@ -656,7 +727,9 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
           brightDataCheckFailed: crossCheck.reason,
           engagementRate: engagement.engagementRate,
           verified: !!profile.verified,
-          biography: profile.biography || ''
+          biography: profile.biography || '',
+          contentType: contentType.label,
+          contentSignals: [...contentType.matchedAdvice, ...contentType.matchedLifestyle]
         });
       } catch (err) {
         skipped.push({ username, reason: err.message });
