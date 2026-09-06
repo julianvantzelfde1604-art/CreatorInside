@@ -16,11 +16,23 @@ jobs:
       - name: Try the request and capture everything about the response
         shell: bash
         run: |
-          echo "=== Bright Data zones list (verification check) ===" > debug-output.txt
+          echo "=== Apify Hashtag Scraper with resultsLimit=150 ===" > debug-output.txt
           curl -s -w "\n[HTTP_STATUS:%{http_code}]\n" \
-            -H "Authorization: Bearer ${{ secrets.BRIGHTDATA_KEY }}" \
-            "https://api.brightdata.com/zone/get_active_zones" \
-            >> debug-output.txt 2>&1
+            -X POST "https://api.apify.com/v2/acts/reGe1ST3OBgYZSsZJ/run-sync-get-dataset-items?token=${{ secrets.APIFY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"hashtags":["parentingtips"],"resultsLimit":150}' \
+            -o response_body.json
+          echo "HTTP status captured above."
+          python3 -c "
+import json
+with open('response_body.json') as f:
+    data = json.load(f)
+print('Items returned:', len(data) if isinstance(data, list) else 'not a list')
+if isinstance(data, list) and len(data) > 0:
+    print('First item keys:', list(data[0].keys())[:10])
+    unique_owners = set(p.get('ownerUsername') for p in data if p.get('ownerUsername'))
+    print('Unique usernames found:', len(unique_owners))
+" >> debug-output.txt
           cat debug-output.txt
 
       - name: Push the result so it can be read back
