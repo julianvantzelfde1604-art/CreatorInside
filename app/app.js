@@ -45,8 +45,18 @@ async function init() {
   document.getElementById('settingsZone').value = config.zone || '';
   document.getElementById('settingsApifyToken').value = config.apifyToken || '';
   renderCreators();
+  refreshUsageStats();
 }
 init();
+
+async function refreshUsageStats() {
+  const stats = await window.api.getUsageStats();
+  document.getElementById('usageStats').innerHTML = `
+    Apify calls: <b>${stats.apifyCalls}</b><br>
+    Bright Data calls: <b>${stats.brightDataCalls}</b><br>
+    Cache hits (free): <b>${stats.cacheHits}</b>
+  `;
+}
 
 // ---------- Settings ----------
 document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
@@ -107,6 +117,15 @@ document.getElementById('verifyBrightDataBtn').addEventListener('click', async (
   }
 });
 
+document.getElementById('clearCacheBtn').addEventListener('click', async () => {
+  const resultEl = document.getElementById('clearCacheResult');
+  if (!confirm('Clear all cached lookups? Your next check on any creator will spend a fresh credit instead of reusing recent data.')) return;
+
+  const result = await window.api.clearCache();
+  resultEl.className = result.success ? 'verify-result ok' : 'verify-result fail';
+  resultEl.textContent = result.success ? 'Cache cleared. Every lookup from now on will be fresh.' : result.error;
+});
+
 // ---------- Lookup ----------
 document.getElementById('lookupBtn').addEventListener('click', async () => {
   const username = document.getElementById('lookupUsername').value.trim();
@@ -133,9 +152,13 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
 
   btn.disabled = false;
   statusEl.textContent = '';
+  refreshUsageStats();
 
   if (response.success) {
     const d = response.data;
+    const cacheNote = response.fromCache
+      ? `<span style="color:var(--verified); font-weight:600;">Reused from cache (checked ${Math.round((Date.now() - response.cachedAt) / 60000)} min ago -- no credit spent)</span>`
+      : `<span style="color:var(--ink-soft);">Fresh lookup -- 1 Apify credit used</span>`;
     resultEl.className = 'lookup-result';
     resultEl.innerHTML = `
       <b>@${escapeHtml(d.username)}</b>${d.verified ? ' <span title="Verified">✓</span>' : ''}
@@ -143,6 +166,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
         ${d.followers !== null ? d.followers.toLocaleString() : '?'} followers ·
         ${d.engagementRate !== null ? d.engagementRate.toFixed(2) + '% engagement (real, from last ' + d.engagementPostsUsed + ' posts)' : 'engagement unknown (no recent post data)'}
       </div>
+      <div style="font-size:11px; margin-top:4px;">${cacheNote}</div>
       ${d.biography ? `<div class="stats" style="font-family:var(--font-ui); font-size:12.5px; margin-top:4px;">${escapeHtml(d.biography)}</div>` : ''}
       ${d.externalUrl ? `<div class="stats" style="font-family:var(--font-ui); font-size:12px; margin-top:4px; color:var(--ink-soft);">Link in bio: ${escapeHtml(d.externalUrl)}</div>` : ''}
       <button class="btn-secondary" id="addFromLookupBtn" style="margin-top:10px;">+ Add to Creators list</button>
@@ -282,6 +306,7 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   });
 
   btn.disabled = false;
+  refreshUsageStats();
 
   if (!response.success) {
     statusEl.textContent = '';
@@ -302,7 +327,8 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     ? `Found all ${response.results.length} you asked for.`
     : `Only found ${response.results.length} of the ${response.targetCount} you asked for -- checked ${response.candidatesChecked} real candidates and ran out of ones that matched your criteria. Try a broader follower range, a lower engagement minimum, or a more active hashtag.`;
   const filterNote = onlyAdvice ? ` Showing ${displayResults.length} tagged "advice/education."` : '';
-  statusEl.textContent = `${targetMsg} (${response.skipped.length} candidates didn't qualify.)${filterNote}`;
+  const cacheNote = response.cacheHitsThisRun > 0 ? ` ${response.cacheHitsThisRun} came from cache (no credit spent).` : '';
+  statusEl.textContent = `${targetMsg} (${response.skipped.length} candidates didn't qualify.)${filterNote}${cacheNote}`;
 
   const contentTagClass = { 'advice/education': 'tag-advice', 'lifestyle': 'tag-lifestyle', 'mixed': 'tag-mixed', 'unclear': 'tag-unclear' };
 
@@ -455,6 +481,7 @@ document.getElementById('bulkCheckBtn').addEventListener('click', async () => {
   });
 
   btn.disabled = false;
+  refreshUsageStats();
 
   if (!response.success) {
     statusEl.textContent = '';

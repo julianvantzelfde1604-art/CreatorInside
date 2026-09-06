@@ -9,6 +9,66 @@ let mainWindow;
 const dataDir = app.getPath('userData');
 const creatorsFile = path.join(dataDir, 'creators.json');
 const configFile = path.join(dataDir, 'config.json');
+const cacheFile = path.join(dataDir, 'lookup-cache.json');
+
+// ---------- Local cache -- the single biggest lever for using fewer
+// credits. If you already checked a username recently, reuse that
+// instead of spending a fresh Apify credit. Cache entries are honest
+// about their own age -- shown to you, never silently hidden.
+
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function loadCache() {
+  try {
+    if (!fs.existsSync(cacheFile)) return {};
+    return JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+  } catch (err) {
+    return {};
+  }
+}
+
+function saveCache(cache) {
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to save cache:', err);
+  }
+}
+
+function getCachedProfile(username) {
+  const cache = loadCache();
+  const entry = cache[username.toLowerCase()];
+  if (!entry) return null;
+  const age = Date.now() - entry.checkedAt;
+  if (age > CACHE_TTL_MS) return null; // stale -- treat as a miss
+  return entry;
+}
+
+function setCachedProfile(username, data) {
+  const cache = loadCache();
+  cache[username.toLowerCase()] = { ...data, checkedAt: Date.now() };
+  saveCache(cache);
+}
+
+// ---------- Usage tracking -- so cost is visible, not a guess.
+// Reset each time the app launches (a running total across app
+// restarts would need its own persistence decision; this keeps
+// today's session cost visible, which is what most people actually
+// want to watch in the moment).
+
+const usageStats = { apifyCalls: 0, brightDataCalls: 0, cacheHits: 0 };
+
+ipcMain.handle('get-usage-stats', async () => usageStats);
+
+ipcMain.handle('clear-cache', async () => {
+  try {
+    saveCache({});
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 // ---------- Apify (Instagram Profile Scraper) ----------
 // Verified for real via GitHub Actions using Julian's actual token before
@@ -20,6 +80,7 @@ const configFile = path.join(dataDir, 'config.json');
 const APIFY_PROFILE_ACTOR_ID = 'dSCLg0C3YEZ83HzYX'; // apify/instagram-profile-scraper
 
 function fetchViaApify(usernames, apiToken) {
+  usageStats.apifyCalls++;
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({ usernames });
     const reqPath = `/v2/acts/${APIFY_PROFILE_ACTOR_ID}/run-sync-get-dataset-items?token=${encodeURIComponent(apiToken)}`;
@@ -346,6 +407,7 @@ ipcMain.handle('export-csv', async (event, creators) => {
 // this is right. If it fails, the raw error is shown, not hidden.
 
 function fetchViaBrightData(targetUrl, apiKey, zone) {
+  usageStats.brightDataCalls++;
   return new Promise((resolve, reject) => {
     // format: "json" (not "raw") is deliberate -- Bright Data silently
     // returns an empty 200 on internal failures when using "raw", but
@@ -449,17 +511,28 @@ ipcMain.handle('bulk-check-apify', async (event, { usernames, minFollowers, maxF
     }
 
     try {
-      const response = await fetchViaApify([username], apiToken);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        skipped.push({ username, reason: `Apify HTTP ${response.statusCode}` });
-        continue;
+      let profile;
+      let usedCache = false;
+
+      const cached = getCachedProfile(username);
+      if (cached) {
+        profile = { username: cached.username, followersCount: cached.followers, verified: cached.verified, biography: cached.biography };
+        usedCache = true;
+        usageStats.cacheHits++;
+      } else {
+        const response = await fetchViaApify([username], apiToken);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          skipped.push({ username, reason: `Apify HTTP ${response.statusCode}` });
+          continue;
+        }
+        const items = JSON.parse(response.body);
+        if (!Array.isArray(items) || items.length === 0) {
+          skipped.push({ username, reason: 'No profile data (private, deleted, or wrong username)' });
+          continue;
+        }
+        profile = items[0];
       }
-      const items = JSON.parse(response.body);
-      if (!Array.isArray(items) || items.length === 0) {
-        skipped.push({ username, reason: 'No profile data (private, deleted, or wrong username)' });
-        continue;
-      }
-      const profile = items[0];
+
       const followers = profile.followersCount ?? null;
       if (followers === null) {
         skipped.push({ username, reason: 'Could not read follower count' });
@@ -469,18 +542,35 @@ ipcMain.handle('bulk-check-apify', async (event, { usernames, minFollowers, maxF
         skipped.push({ username, reason: `${followers.toLocaleString()} followers -- outside your range` });
         continue;
       }
-      const engagement = computeEngagementFromPosts(profile);
+      const engagement = usedCache
+        ? { engagementRate: cached.engagementRate, postsUsed: cached.engagementPostsUsed || 0 }
+        : computeEngagementFromPosts(profile);
       if (minEng > 0 && (engagement.engagementRate === null || engagement.engagementRate < minEng)) {
         skipped.push({ username, reason: `${engagement.engagementRate !== null ? engagement.engagementRate + '%' : 'unknown'} engagement -- below your ${minEng}% minimum` });
         continue;
       }
-      results.push({
+
+      const resultData = {
         username: profile.username || username,
         followers,
         engagementRate: engagement.engagementRate,
         verified: !!profile.verified,
-        biography: profile.biography || ''
-      });
+        biography: profile.biography || '',
+        fromCache: usedCache
+      };
+
+      if (!usedCache) {
+        setCachedProfile(username, {
+          username: resultData.username,
+          followers: resultData.followers,
+          verified: resultData.verified,
+          biography: resultData.biography,
+          engagementRate: resultData.engagementRate,
+          engagementPostsUsed: engagement.postsUsed
+        });
+      }
+
+      results.push(resultData);
     } catch (err) {
       skipped.push({ username, reason: err.message });
     }
@@ -489,11 +579,19 @@ ipcMain.handle('bulk-check-apify', async (event, { usernames, minFollowers, maxF
   return { success: true, totalChecked: cleanList.length, results, skipped };
 });
 
-ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken }) => {
+ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken, skipCache }) => {
   if (!apiToken) {
     return { success: false, error: 'No Apify API token set. Add it in Settings first.' };
   }
   const cleanUsername = username.replace(/^@/, '').trim();
+
+  if (!skipCache) {
+    const cached = getCachedProfile(cleanUsername);
+    if (cached) {
+      usageStats.cacheHits++;
+      return { success: true, data: cached, fromCache: true, cachedAt: cached.checkedAt };
+    }
+  }
 
   try {
     const response = await fetchViaApify([cleanUsername], apiToken);
@@ -524,22 +622,23 @@ ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken }) => 
     const profile = items[0];
     const engagement = computeEngagementFromPosts(profile);
 
-    return {
-      success: true,
-      data: {
-        username: profile.username || cleanUsername,
-        fullName: profile.fullName || null,
-        followers: profile.followersCount ?? null,
-        following: profile.followsCount ?? null,
-        postsCount: profile.postsCount ?? null,
-        verified: !!profile.verified,
-        biography: profile.biography || '',
-        externalUrl: profile.externalUrl || null,
-        engagementRate: engagement.engagementRate,
-        engagementPostsUsed: engagement.postsUsed,
-        mostRecentPostDate: engagement.mostRecentPostDate
-      }
+    const data = {
+      username: profile.username || cleanUsername,
+      fullName: profile.fullName || null,
+      followers: profile.followersCount ?? null,
+      following: profile.followsCount ?? null,
+      postsCount: profile.postsCount ?? null,
+      verified: !!profile.verified,
+      biography: profile.biography || '',
+      externalUrl: profile.externalUrl || null,
+      engagementRate: engagement.engagementRate,
+      engagementPostsUsed: engagement.postsUsed,
+      mostRecentPostDate: engagement.mostRecentPostDate
     };
+
+    setCachedProfile(cleanUsername, data);
+
+    return { success: true, data, fromCache: false };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -549,6 +648,7 @@ ipcMain.handle('lookup-creator-apify', async (event, { username, apiToken }) => 
 const APIFY_HASHTAG_ACTOR_ID = 'reGe1ST3OBgYZSsZJ'; // apify/instagram-hashtag-scraper
 
 function fetchHashtagPostsViaApify(hashtag, apiToken, resultsLimit) {
+  usageStats.apifyCalls++;
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({ hashtags: [hashtag], resultsLimit });
     const reqPath = `/v2/acts/${APIFY_HASHTAG_ACTOR_ID}/run-sync-get-dataset-items?token=${encodeURIComponent(apiToken)}`;
@@ -686,6 +786,8 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
     const results = [];
     const skipped = [];
     let checked = 0;
+    let cacheHitsThisRun = 0;
+    let brightDataKnownBroken = false; // adaptive: stop retrying after first real failure
 
     // Keep checking candidates until we hit the target count, run out
     // of candidates, or hit the hard safety cap -- whichever comes first.
@@ -695,17 +797,33 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
       checked++;
 
       try {
-        const profileResponse = await fetchViaApify([username], apiToken);
-        if (profileResponse.statusCode < 200 || profileResponse.statusCode >= 300) {
-          skipped.push({ username, reason: `Profile fetch failed (HTTP ${profileResponse.statusCode})` });
-          continue;
+        let profile;
+        let usedCache = false;
+
+        const cached = getCachedProfile(username);
+        if (cached) {
+          profile = {
+            username: cached.username, followersCount: cached.followers,
+            verified: cached.verified, biography: cached.biography,
+            latestPosts: [] // engagement is recomputed fresh below only when not cached
+          };
+          usedCache = true;
+          cacheHitsThisRun++;
+          usageStats.cacheHits++;
+        } else {
+          const profileResponse = await fetchViaApify([username], apiToken);
+          if (profileResponse.statusCode < 200 || profileResponse.statusCode >= 300) {
+            skipped.push({ username, reason: `Profile fetch failed (HTTP ${profileResponse.statusCode})` });
+            continue;
+          }
+          const items = JSON.parse(profileResponse.body);
+          if (!Array.isArray(items) || items.length === 0) {
+            skipped.push({ username, reason: 'No profile data returned (may be private or deleted)' });
+            continue;
+          }
+          profile = items[0];
         }
-        const items = JSON.parse(profileResponse.body);
-        if (!Array.isArray(items) || items.length === 0) {
-          skipped.push({ username, reason: 'No profile data returned (may be private or deleted)' });
-          continue;
-        }
-        const profile = items[0];
+
         const followers = profile.followersCount ?? null;
         if (followers === null) {
           skipped.push({ username, reason: 'Could not read follower count' });
@@ -715,19 +833,36 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
           skipped.push({ username, reason: `${followers.toLocaleString()} followers -- outside your range` });
           continue;
         }
-        const engagement = computeEngagementFromPosts(profile);
+
+        // Cached entries already have engagement computed and stored;
+        // fresh fetches compute it now from the posts just retrieved.
+        const engagement = usedCache
+          ? { engagementRate: cached.engagementRate, postsUsed: cached.engagementPostsUsed || 0 }
+          : computeEngagementFromPosts(profile);
+
         if (minEng > 0 && (engagement.engagementRate === null || engagement.engagementRate < minEng)) {
           skipped.push({ username, reason: `${engagement.engagementRate !== null ? engagement.engagementRate + '%' : 'unknown'} engagement -- below your ${minEng}% minimum` });
           continue;
         }
 
-        // Cross-check the follower count against an independent source.
-        // A mismatch or failed check is shown, never hidden or silently
-        // trusted as agreement.
-        const crossCheck = await crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone, followers);
-        const contentType = classifyContentType(profile);
+        // Cross-check the follower count against an independent source --
+        // but adaptively: if the very first attempt this run fails, assume
+        // Bright Data is misconfigured for this session and stop wasting
+        // 45-second timeouts on every remaining candidate. This is shown
+        // to you, not silently decided.
+        let crossCheck = { followers: null, reason: 'Skipped -- Bright Data failed earlier this run, not retried to avoid repeated timeouts' };
+        if (!brightDataKnownBroken) {
+          crossCheck = await crossCheckFollowersViaBrightData(username, brightDataKey, brightDataZone, followers);
+          if (crossCheck.followers === null && brightDataKey) {
+            brightDataKnownBroken = true;
+          }
+        }
 
-        results.push({
+        const contentType = usedCache
+          ? { label: cached.contentType || 'unclear', matchedAdvice: [], matchedLifestyle: cached.contentSignals || [] }
+          : classifyContentType(profile);
+
+        const resultData = {
           username: profile.username || username,
           followers,
           brightDataFollowers: crossCheck.followers,
@@ -737,7 +872,22 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
           biography: profile.biography || '',
           contentType: contentType.label,
           contentSignals: [...contentType.matchedAdvice, ...contentType.matchedLifestyle]
-        });
+        };
+
+        if (!usedCache) {
+          setCachedProfile(username, {
+            username: resultData.username,
+            followers: resultData.followers,
+            verified: resultData.verified,
+            biography: resultData.biography,
+            engagementRate: resultData.engagementRate,
+            engagementPostsUsed: engagement.postsUsed,
+            contentType: contentType.label,
+            contentSignals: resultData.contentSignals
+          });
+        }
+
+        results.push(resultData);
       } catch (err) {
         skipped.push({ username, reason: err.message });
       }
@@ -747,6 +897,7 @@ ipcMain.handle('discover-creators-apify', async (event, { hashtag, minFollowers,
       success: true,
       candidatesFound: candidates.length,
       candidatesChecked: checked,
+      cacheHitsThisRun,
       targetCount: wantCount,
       hitTarget: results.length >= wantCount,
       results,

@@ -37,6 +37,7 @@
       <div class="sidebar-foot">
         <span class="foot-line">Data verified live via</span>
         <span class="foot-brand">Bright Data</span>
+        <div id="usageStats" class="usage-stats"></div>
       </div>
     </nav>
 
@@ -237,6 +238,19 @@
           <div id="verifyBrightDataResult" class="verify-result"></div>
           <button class="btn-primary" id="saveSettingsBtn" style="margin-top:14px;">Save All</button>
           <div id="settingsSaved" class="saved-msg" style="display:none;">Saved.</div>
+        </section>
+
+        <section class="panel panel-narrow">
+          <div class="panel-head">
+            <h2>Lookup cache</h2>
+            <p class="hint">
+              Results are reused for 24 hours to avoid spending credits re-checking
+              the same creator. Clear this if you want fully fresh data on your
+              next lookup.
+            </p>
+          </div>
+          <button class="btn-secondary" id="clearCacheBtn">Clear Cache</button>
+          <div id="clearCacheResult" class="verify-result"></div>
         </section>
       </div>
     </main>

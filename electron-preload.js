@@ -17,5 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   checkForUpdatesNow: () => ipcRenderer.invoke('check-for-updates-now'),
   verifyApifyToken: (payload) => ipcRenderer.invoke('verify-apify-token', payload),
   verifyBrightDataCredentials: (payload) => ipcRenderer.invoke('verify-brightdata-credentials', payload),
+  getUsageStats: () => ipcRenderer.invoke('get-usage-stats'),
+  clearCache: () => ipcRenderer.invoke('clear-cache'),
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data))
 });
