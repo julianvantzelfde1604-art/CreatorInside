@@ -1,6 +1,23 @@
 let creators = [];
 let config = { apiKey: '', zone: '', apifyToken: '' };
 
+// ---------- Toast notifications -- replaces blocking alert() popups ----------
+function toast(message, type = 'default') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast' + (type === 'ok' ? ' ok' : type === 'warn' ? ' warn' : '');
+  el.textContent = message;
+  container.appendChild(el);
+
+  // Force a reflow so the transition actually triggers, then show it.
+  requestAnimationFrame(() => el.classList.add('show'));
+
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, 3200);
+}
+
 // ---------- Auto-update ----------
 window.api.onUpdateStatus((data) => {
   const banner = document.getElementById('updateBanner');
@@ -134,13 +151,14 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
   const rawEl = document.getElementById('lookupRaw');
   const btn = document.getElementById('lookupBtn');
 
-  if (!username) { alert('Enter a username first.'); return; }
+  if (!username) { toast('Enter a username first.', 'warn'); return; }
   if (!config.apifyToken) {
     statusEl.textContent = 'No Apify token set -- go to Settings and add it first.';
     return;
   }
 
   btn.disabled = true;
+  btn.classList.add('loading');
   statusEl.textContent = 'Fetching via Apify...';
   resultEl.style.display = 'none';
   rawEl.style.display = 'none';
@@ -151,6 +169,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
   });
 
   btn.disabled = false;
+  btn.classList.remove('loading');
   statusEl.textContent = '';
   refreshUsageStats();
 
@@ -175,7 +194,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
 
     document.getElementById('addFromLookupBtn').addEventListener('click', async () => {
       if (creators.some(c => c.username.toLowerCase() === d.username.toLowerCase())) {
-        alert('Already in your list.');
+        toast('Already in your list.', 'warn');
         return;
       }
       creators.push({
@@ -190,7 +209,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
       });
       await window.api.saveCreators(creators);
       renderCreators();
-      alert('Added @' + d.username + ' to your Creators list.');
+      toast('Added @' + d.username + ' to your Creators list.', 'ok');
     });
   } else {
     resultEl.className = 'lookup-result error';
@@ -213,7 +232,7 @@ async function lookupViaBrightDataFallback() {
   const resultEl = document.getElementById('lookupResult');
   const rawEl = document.getElementById('lookupRaw');
 
-  if (!username) { alert('Enter a username first.'); return; }
+  if (!username) { toast('Enter a username first.', 'warn'); return; }
   if (!config.apiKey) {
     statusEl.textContent = 'No Bright Data API key set -- go to Settings and add your Bright Data key first.';
     return;
@@ -246,7 +265,7 @@ async function lookupViaBrightDataFallback() {
 
     document.getElementById('addFromLookupBtn').addEventListener('click', async () => {
       if (creators.some(c => c.username.toLowerCase() === d.username.toLowerCase())) {
-        alert('Already in your list.');
+        toast('Already in your list.', 'warn');
         return;
       }
       creators.push({
@@ -260,7 +279,7 @@ async function lookupViaBrightDataFallback() {
       });
       await window.api.saveCreators(creators);
       renderCreators();
-      alert('Added @' + d.username + ' to your Creators list.');
+      toast('Added @' + d.username + ' to your Creators list.', 'ok');
     });
   } else {
     resultEl.className = 'lookup-result error';
@@ -289,13 +308,14 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   const rawEl = document.getElementById('discoverRaw');
   const btn = document.getElementById('discoverBtn');
 
-  if (!hashtag) { alert('Enter a hashtag first.'); return; }
+  if (!hashtag) { toast('Enter a hashtag first.', 'warn'); return; }
   if (!config.apifyToken) {
     statusEl.textContent = 'No Apify token set -- go to Settings and add it first.';
     return;
   }
 
   btn.disabled = true;
+  btn.classList.add('loading');
   statusEl.textContent = `Looking for ${targetCount} matching creator(s) -- this checks candidates one by one and can take a while. Each check uses a small amount of your Apify credits.`;
   resultsEl.innerHTML = '';
   rawEl.style.display = 'none';
@@ -306,6 +326,7 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
   });
 
   btn.disabled = false;
+  btn.classList.remove('loading');
   refreshUsageStats();
 
   if (!response.success) {
@@ -362,7 +383,7 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     b.addEventListener('click', async () => {
       const username = b.dataset.username;
       if (creators.some(c => c.username.toLowerCase() === username.toLowerCase())) {
-        alert('Already in your list.');
+        toast('Already in your list.', 'warn');
         return;
       }
       creators.push({
@@ -463,16 +484,17 @@ document.getElementById('bulkCheckBtn').addEventListener('click', async () => {
   const resultsEl = document.getElementById('bulkResults');
   const btn = document.getElementById('bulkCheckBtn');
 
-  if (usernames.length === 0) { alert('Paste at least one username first.'); return; }
+  if (usernames.length === 0) { toast('Paste at least one username first.', 'warn'); return; }
   if (!config.apifyToken) {
     statusEl.textContent = 'No Apify token set -- go to Settings and add it first.';
     return;
   }
   if (usernames.length > 50) {
-    alert('Capped at 50 per batch -- only the first 50 will be checked.');
+    toast('Capped at 50 per batch -- only the first 50 will be checked.', 'warn');
   }
 
   btn.disabled = true;
+  btn.classList.add('loading');
   resultsEl.innerHTML = '';
   statusEl.textContent = `Starting check of ${Math.min(usernames.length, 50)} usernames...`;
 
@@ -481,6 +503,7 @@ document.getElementById('bulkCheckBtn').addEventListener('click', async () => {
   });
 
   btn.disabled = false;
+  btn.classList.remove('loading');
   refreshUsageStats();
 
   if (!response.success) {
@@ -529,14 +552,14 @@ document.getElementById('bulkCheckBtn').addEventListener('click', async () => {
       }
       await window.api.saveCreators(creators);
       renderCreators();
-      alert(`Added ${added} new creator(s) (skipped any already in your list).`);
+      toast(`Added ${added} new creator(s) (skipped any already in your list).`, 'ok');
     });
   }
 });
 
 async function addOneFromBulk(username, followersStr, engagementStr, btn) {
   if (creators.some(c => c.username.toLowerCase() === username.toLowerCase())) {
-    alert('Already in your list.');
+    toast('Already in your list.', 'warn');
     return;
   }
   creators.push({
@@ -622,18 +645,18 @@ function renderCreators() {
 }
 
 document.getElementById('exportBtn').addEventListener('click', async () => {
-  if (creators.length === 0) { alert('No creators yet.'); return; }
+  if (creators.length === 0) { toast('No creators yet.', 'warn'); return; }
   const result = await window.api.exportCsv(getFiltered());
-  alert(result.success ? 'Exported to: ' + result.path : 'Export failed: ' + result.error);
+  toast(result.success ? 'Exported to: ' + result.path : 'Export failed: ' + result.error, result.success ? 'ok' : 'warn');
 });
 
 document.getElementById('copyDocsBtn').addEventListener('click', () => {
   const filtered = getFiltered();
-  if (filtered.length === 0) { alert('No creators match your filters.'); return; }
+  if (filtered.length === 0) { toast('No creators match your filters.', 'warn'); return; }
   const table = `| Creator Profile | Social Blade |\n|---|---|\n` +
     filtered.map(c => `| [${c.username}](${c.instagramUrl}) | [SocialBlade](${c.socialBladeUrl}) |`).join('\n');
   navigator.clipboard.writeText(table);
-  alert('Copied ' + filtered.length + ' creators.');
+  toast('Copied ' + filtered.length + ' creators.', 'ok');
 });
 
 function escapeHtml(str) {

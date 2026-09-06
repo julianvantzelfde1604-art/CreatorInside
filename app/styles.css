@@ -481,3 +481,108 @@ code {
   background: var(--navy); color: white; border: none; padding: 6px 14px;
   border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font-ui);
 }
+
+/* ============ TOAST NOTIFICATIONS -- replaces jarring alert() popups ============ */
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--navy);
+  color: white;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  max-width: 380px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: auto;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.ok { background: var(--verified); }
+.toast.warn { background: var(--flag); }
+
+/* ============ SMOOTH TRANSITIONS THROUGHOUT ============ */
+
+.panel { transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+.panel:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
+
+.discover-card, .preview-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.discover-card:hover, .preview-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+.btn-primary, .btn-secondary {
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+.btn-primary:active, .btn-secondary:active { transform: scale(0.97); }
+.btn-primary:not(:disabled):hover { box-shadow: 0 2px 8px rgba(35,50,74,0.25); }
+
+.nav-btn { transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
+
+input, textarea, select { transition: border-color 0.15s ease, background 0.15s ease; }
+
+/* ============ LOADING SPINNER (buttons during async work) ============ */
+
+.btn-primary.loading {
+  color: transparent;
+  position: relative;
+  pointer-events: none;
+}
+.btn-primary.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 14px; height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============ CUSTOM SCROLLBARS ============ */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 5px;
+  border: 2px solid var(--paper);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--brass-soft); }
+
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-color: var(--navy); }
+.sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+/* Fade-in for dynamically inserted result lists */
+.discover-results > *, #creatorsBody tr {
+  animation: fadeInRow 0.25s ease;
+}
+@keyframes fadeInRow {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Smooth tab switching -- fade/slide instead of an instant hard cut */
+.tab-panel { animation: none; }
+.tab-panel.active { animation: panelIn 0.2s ease; }
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
